@@ -3,7 +3,7 @@
 import { db } from '@/lib/db';
 import { StoreSettings } from '@/lib/types';
 
-const initialSettings: StoreSettings = {
+export const initialSettings: StoreSettings = {
     storeName: 'ADC Móveis',
     storeCity: '',
     storeAddress: '',

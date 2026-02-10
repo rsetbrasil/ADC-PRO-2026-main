@@ -12,9 +12,9 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { generatePixPayload } from '@/lib/pix';
 import PixQRCode from '@/components/PixQRCode';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { useData } from '@/context/DataContext';
-import { getSettingsAction } from '@/app/actions/settings';
+import { getSettingsAction, initialSettings } from '@/app/actions/settings';
 import { getOrderForCarnetAction } from '@/app/actions/orders-fetcher';
 
 // ... (imports remain the same, except supabase)
