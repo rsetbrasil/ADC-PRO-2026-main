@@ -37,28 +37,49 @@ npm install -g pm2
 
 ---
 
-## 2. Configuração do Banco de Dados (PostgreSQL)
+## 2. Configuração do Banco de Dados (MySQL)
 
-### Instale o PostgreSQL
+### Instale o MySQL Server
 ```bash
-apt install -y postgresql postgresql-contrib
+apt install -y mysql-server
 ```
+
+### Execute a configuração segura do MySQL
+```bash
+mysql_secure_installation
+```
+
+Responda as perguntas:
+- **Validate Password Component?** → `Y` (recomendado)
+- **Password Strength:** → `2` (STRONG - recomendado)
+- **Root Password:** → Digite uma senha forte e anote
+- **Remove anonymous users?** → `Y`
+- **Disallow root login remotely?** → `Y`
+- **Remove test database?** → `Y`
+- **Reload privilege tables?** → `Y`
 
 ### Configure o Usuário e Banco de Dados
-Acesse o prompt do Postgres:
+Acesse o MySQL como root:
 ```bash
-sudo -u postgres psql
+mysql -u root -p
 ```
+(Digite a senha root que você criou acima)
 
 Execute os comandos SQL abaixo (altere `sua_senha_segura`):
 
 ```sql
-CREATE DATABASE appdb;
-CREATE USER appuser WITH ENCRYPTED PASSWORD 'sua_senha_segura';
-GRANT ALL PRIVILEGES ON DATABASE appdb TO appuser;
-ALTER DATABASE appdb OWNER TO appuser;
-\q
+CREATE DATABASE adc_pro_2026;
+CREATE USER 'appuser'@'localhost' IDENTIFIED BY 'sua_senha_segura';
+GRANT ALL PRIVILEGES ON adc_pro_2026.* TO 'appuser'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
 ```
+
+### Teste a conexão
+```bash
+mysql -u appuser -p adc_pro_2026
+```
+Digite a senha do `appuser`. Se conectar com sucesso, digite `EXIT;` para sair.
 
 ---
 
@@ -85,11 +106,14 @@ nano .env.production
 
 Cole o conteúdo (ajuste com seus dados):
 ```env
-# Banco de Dados
-DATABASE_URL="postgresql://appuser:sua_senha_segura@localhost:5432/appdb?schema=public"
+# Banco de Dados MySQL
+DATABASE_URL="mysql://appuser:sua_senha_segura@localhost:3306/adc_pro_2026"
 
 # Autenticação (Gere um segredo com `openssl rand -base64 32`)
 AUTH_SECRET="seu_segredo_gerado_aqui"
+
+# JWT Secret
+JWT_SECRET="outro_segredo_gerado_aqui"
 
 # Outras Configurações
 NEXT_PUBLIC_APP_URL="https://seu-dominio.com"
@@ -104,7 +128,7 @@ npx prisma db push
 ```
 
 > **Nota:** Se você preferir usar o SQL gerado manualmente, pode rodar:
-> `psql -U appuser -d appdb -f setup_db.sql`
+> `mysql -u appuser -p adc_pro_2026 < setup_db.sql`
 
 ### Build do Projeto
 ```bash
