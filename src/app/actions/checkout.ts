@@ -38,8 +38,13 @@ export type CreateOrderResult =
 export async function createOrderAction(orderData: any, customerData: any): Promise<CreateOrderResult> {
     try {
         return await db.$transaction(async (tx) => {
-            // 1. Check stock
+            // 1. Check stock and deduct for catalog products only
             for (const item of orderData.items) {
+                // Skip custom products (they don't exist in database)
+                if (item.id.startsWith('CUSTOM-')) {
+                    continue;
+                }
+
                 // @ts-ignore
                 const product = await tx.product.findUnique({
                     where: { id: item.id }
@@ -58,10 +63,11 @@ export async function createOrderAction(orderData: any, customerData: any): Prom
                 });
             }
 
-            // 3. Save Order
+            // 3. Save Order (remove firstDueDate as it's not in schema)
+            const { firstDueDate, ...orderToSave } = orderData;
             // @ts-ignore
             await tx.order.create({
-                data: orderData
+                data: orderToSave
             });
 
             // 4. Upsert Customer
