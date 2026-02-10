@@ -8,7 +8,7 @@ async function main() {
         const order = await prisma.order.findFirst({
             where: {
                 installmentDetails: {
-                    not: null
+                    not: null as any
                 }
             }
         });
