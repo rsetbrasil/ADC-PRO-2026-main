@@ -16,9 +16,107 @@ import Logo from '@/components/Logo';
 import { getSettingsAction } from '@/app/actions/settings';
 import { getOrderForCarnetAction } from '@/app/actions/orders-fetcher';
 
-// ... (imports remain the same, except supabase)
+const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(value);
+};
 
-// ... (ReceiptContent and other helper components remain the same)
+function ReceiptContent({ order, installment, settings, via }: { order: Order, installment: Installment, settings: StoreSettings, via: string }) {
+    if (!order || !installment) return null;
+
+    const customerName = order.customer.name;
+    const document = order.customer.cpf || order.customer.code || 'N/A';
+
+    return (
+        <div className="border border-black p-6 text-sm font-mono uppercase bg-white">
+            {/* Header */}
+            <div className="text-center border-b border-black pb-4 mb-4">
+                <h2 className="font-bold text-xl">{settings.storeName}</h2>
+                <div className="text-xs space-y-1">
+                    <p>{settings.storeAddress}, {settings.storeCity}</p>
+                    <p>Tel: {settings.storePhone}</p>
+                </div>
+                <h3 className="mt-4 font-bold text-lg border-t border-black pt-2">COMPROVANTE DE PAGAMENTO</h3>
+                <p className="text-xs">Via: {via}</p>
+            </div>
+
+            {/* Details */}
+            <div className="space-y-3">
+                <div className="grid grid-cols-[80px_1fr]">
+                    <span className="font-bold">Cliente:</span>
+                    <span>{customerName}</span>
+                </div>
+                <div className="grid grid-cols-[80px_1fr]">
+                    <span className="font-bold">CPF/Cód:</span>
+                    <span>{document}</span>
+                </div>
+                <div className="border-t border-dashed border-black my-2"></div>
+
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <span className="font-bold block">Pedido:</span>
+                        <span>#{order.id.slice(0, 8)}</span>
+                    </div>
+                    <div className="text-right">
+                        <span className="font-bold block">Data:</span>
+                        <span>{order.createdAt ? format(parseISO(order.createdAt), 'dd/MM/yyyy') : '-'}</span>
+                    </div>
+                </div>
+
+                <div className="border-t border-dashed border-black my-2"></div>
+
+                <div className="grid grid-cols-[100px_1fr] items-center">
+                    <span className="font-bold">Parcela:</span>
+                    <span className="text-lg">{installment.installmentNumber} / {order.installments}</span>
+                </div>
+
+                <div className="grid grid-cols-[100px_1fr] items-center">
+                    <span className="font-bold">Vencimento:</span>
+                    <span>{format(parseISO(installment.dueDate), 'dd/MM/yyyy')}</span>
+                </div>
+
+                <div className="grid grid-cols-[100px_1fr] items-center">
+                    <span className="font-bold">Valor:</span>
+                    <span>{formatCurrency(installment.amount)}</span>
+                </div>
+
+                <div className="grid grid-cols-[100px_1fr] items-center">
+                    <span className="font-bold">Situação:</span>
+                    <span className="font-bold">{installment.status}</span>
+                </div>
+
+                {installment.status === 'Pago' && (
+                    <>
+                        <div className="grid grid-cols-[100px_1fr] items-center">
+                            <span className="font-bold">Pago em:</span>
+                            <span>{installment.paymentDate ? format(parseISO(installment.paymentDate), 'dd/MM/yyyy') : '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-[100px_1fr] items-center">
+                            <span className="font-bold">Valor Pago:</span>
+                            <span>{formatCurrency(installment.paidAmount || 0)}</span>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Footer */}
+            <div className="mt-8 pt-4 border-t border-black text-center text-xs">
+                <p>Obrigado pela preferência!</p>
+                <p>{format(new Date(), "dd/MM/yyyy HH:mm:ss")}</p>
+            </div>
+        </div>
+    );
+}
+
+const initialSettings: StoreSettings = {
+    storeName: '',
+    storeCity: '',
+    storeAddress: '',
+    pixKey: '',
+    storePhone: ''
+};
 
 export default function SingleInstallmentPage() {
     const params = useParams();

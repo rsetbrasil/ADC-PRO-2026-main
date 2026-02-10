@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 
 export async function payCommissionAction(sellerId: string, sellerName: string, amount: number, orderIds: string[], period: string, user: User | null) {
     try {
-        const payment = await db.$transaction(async (tx) => {
+        const payment = await db.$transaction(async (tx: any) => {
             // 1. Create Commission Payment Record
             const newPayment = await tx.commissionPayment.create({
                 data: {
@@ -16,7 +16,7 @@ export async function payCommissionAction(sellerId: string, sellerName: string, 
                     amount,
                     period,
                     paymentDate: new Date().toISOString(),
-                    orderIds: orderIds
+                    orderIds: orderIds as any
                 }
             });
 
@@ -47,7 +47,7 @@ export async function payCommissionAction(sellerId: string, sellerName: string, 
 
 export async function reverseCommissionPaymentAction(paymentId: string, user: User | null) {
     try {
-        await db.$transaction(async (tx) => {
+        await db.$transaction(async (tx: any) => {
             const payment = await tx.commissionPayment.findUnique({ where: { id: paymentId } });
             if (!payment) throw new Error('Payment not found');
 
