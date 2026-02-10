@@ -31,7 +31,11 @@ export async function allocateNextCustomerCodeAction() {
     return { success: true, code: `CLI-${Date.now().toString().slice(-6)}` };
 }
 
-export async function createOrderAction(orderData: any, customerData: any) {
+export type CreateOrderResult =
+    | { success: true; orderId: string }
+    | { success: false; error: string };
+
+export async function createOrderAction(orderData: any, customerData: any): Promise<CreateOrderResult> {
     try {
         return await db.$transaction(async (tx) => {
             // 1. Check stock
