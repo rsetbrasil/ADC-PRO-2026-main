@@ -8,6 +8,8 @@ dotenv.config({ path: path.resolve(__dirname, '.env.local') });
 
 const prisma = new PrismaClient();
 
+console.log('Loaded DATABASE_URL:', process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/:[^:@]*@/, ':****@') : 'UNDEFINED');
+
 async function main() {
     try {
         console.log('Testing database connection...');

@@ -3,6 +3,7 @@
 import { db } from '@/lib/db';
 import { CustomerInfo, User } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
+import { createClient } from '@supabase/supabase-js';
 
 export async function addCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
@@ -25,12 +26,48 @@ export async function addCustomerAction(customerData: CustomerInfo, user: User |
 
 export async function getCustomersAction() {
     try {
-        const customers = await db.customer.findMany({
-            orderBy: { name: 'asc' }
-        });
-        return { success: true, data: customers as unknown as CustomerInfo[] };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data, error } = await supabase
+            .from('customers')
+            .select('*')
+            .order('name', { ascending: true });
+        if (error) throw error;
+        const mapped: CustomerInfo[] = (data || []).map((c: any) => ({
+            id: c.id,
+            code: c.code || undefined,
+            name: c.name,
+            cpf: c.cpf || undefined,
+            phone: c.phone || '',
+            phone2: c.phone2 || undefined,
+            phone3: c.phone3 || undefined,
+            email: c.email || undefined,
+            zip: c.zip || '',
+            address: c.address || '',
+            number: c.number || '',
+            complement: c.complement || undefined,
+            neighborhood: c.neighborhood || '',
+            city: c.city || '',
+            state: c.state || '',
+            password: c.password || undefined,
+            observations: c.observations || undefined,
+            sellerId: c.sellerId || undefined,
+            sellerName: c.sellerName || undefined,
+            blocked: !!c.blocked,
+            blockedReason: c.blockedReason || undefined,
+            rating: c.rating ?? undefined,
+        }));
+        return { success: true, data: mapped };
+    } catch {
+        try {
+            const customers = await db.customer.findMany({
+                orderBy: { name: 'asc' }
+            });
+            return { success: true, data: customers as unknown as CustomerInfo[] };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 }
 

@@ -42,7 +42,7 @@ model Product {
   minStock          Int?      @map("min_stock")
   unit              String?
   imageUrl          String?   @map("image_url")
-  imageUrls         Json?     @map("image_urls")
+  imageUrls         String[]  @map("image_urls")
   maxInstallments   Int?      @map("max_installments")
   paymentCondition  String?   @map("payment_condition")
   commissionType    String?   @map("commission_type")
@@ -59,7 +59,7 @@ model Category {
   id            String   @id @default(uuid())
   name          String
   order         Int?
-  subcategories Json?
+  subcategories String[]
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

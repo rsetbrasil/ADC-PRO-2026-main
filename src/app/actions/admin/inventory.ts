@@ -4,6 +4,7 @@
 import { db } from '@/lib/db';
 import { User, StockAudit, Avaria } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
+import { createClient } from '@supabase/supabase-js';
 
 // --- Stock Audit ---
 
@@ -29,13 +30,35 @@ export async function saveStockAuditAction(audit: StockAudit, user: User | null)
 
 export async function getStockAuditsAction() {
     try {
-        const audits = await db.stockAudit.findMany({
-            orderBy: { createdAt: 'desc' },
-            take: 24 // Last 2 years
-        });
-        return { success: true, data: audits as unknown as StockAudit[] };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data, error } = await supabase
+            .from('stock_audits')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(24);
+        if (error) throw error;
+        const mapped: StockAudit[] = (data || []).map((a: any) => ({
+            id: a.id,
+            month: a.month,
+            year: a.year,
+            createdAt: a.created_at,
+            auditedBy: a.audited_by,
+            auditedByName: a.audited_by_name,
+            products: Array.isArray(a.products) ? a.products : [],
+        }));
+        return { success: true, data: mapped };
+    } catch {
+        try {
+            const audits = await db.stockAudit.findMany({
+                orderBy: { createdAt: 'desc' },
+                take: 24
+            });
+            return { success: true, data: audits as unknown as StockAudit[] };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 }
 
@@ -85,11 +108,34 @@ export async function deleteAvariaAction(id: string, user: User | null) {
 
 export async function getAvariasAction() {
     try {
-        const avarias = await db.avaria.findMany({
-            orderBy: { createdAt: 'desc' }
-        });
-        return { success: true, data: avarias as unknown as Avaria[] };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data, error } = await supabase
+            .from('avarias')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        const mapped: Avaria[] = (data || []).map((a: any) => ({
+            id: a.id,
+            createdAt: a.created_at,
+            createdBy: a.created_by,
+            createdByName: a.created_by_name,
+            customerId: a.customer_id,
+            customerName: a.customer_name,
+            productId: a.product_id,
+            productName: a.product_name,
+            description: a.description,
+        }));
+        return { success: true, data: mapped };
+    } catch {
+        try {
+            const avarias = await db.avaria.findMany({
+                orderBy: { createdAt: 'desc' }
+            });
+            return { success: true, data: avarias as unknown as Avaria[] };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 }

@@ -592,6 +592,10 @@ export default function CheckoutForm() {
                 </div>
               )}
               <h4 className="text-lg font-semibold pt-4">Endereço de Entrega</h4>
+              <div className="p-3 bg-amber-500/10 text-amber-900 rounded-lg text-sm flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                <p><strong>Entrega:</strong> nossos entregadores não sobem escadas.</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <FormField control={form.control} name="zip" render={({ field }) => (<FormItem className="md:col-span-2"><FormLabel>CEP <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="00000-000" {...field} onBlur={handleZipBlur} /></FormControl><FormMessage /></FormItem>)} />
                 <FormField control={form.control} name="address" render={({ field }) => (<FormItem className="md:col-span-4"><FormLabel>Endereço <span className="text-destructive">*</span></FormLabel><FormControl><Input placeholder="Rua, Av." {...field} /></FormControl><FormMessage /></FormItem>)} />

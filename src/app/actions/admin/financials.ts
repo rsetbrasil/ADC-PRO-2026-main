@@ -4,6 +4,7 @@
 import { db } from '@/lib/db';
 import { User, CommissionPayment } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
+import { createClient } from '@supabase/supabase-js';
 
 export async function payCommissionAction(sellerId: string, sellerName: string, amount: number, orderIds: string[], period: string, user: User | null) {
     try {
@@ -75,11 +76,32 @@ export async function reverseCommissionPaymentAction(paymentId: string, user: Us
 
 export async function getCommissionPaymentsAction() {
     try {
-        const payments = await db.commissionPayment.findMany({
-            orderBy: { paymentDate: 'desc' }
-        });
-        return { success: true, data: payments as unknown as CommissionPayment[] };
-    } catch (error: any) {
-        return { success: false, error: error.message };
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data, error } = await supabase
+            .from('commission_payments')
+            .select('*')
+            .order('payment_date', { ascending: false });
+        if (error) throw error;
+        const mapped: CommissionPayment[] = (data || []).map((p: any) => ({
+            id: p.id,
+            sellerId: p.seller_id,
+            sellerName: p.seller_name,
+            amount: Number(p.amount || 0),
+            paymentDate: p.payment_date,
+            period: p.period,
+            orderIds: Array.isArray(p.order_ids) ? p.order_ids : [],
+        }));
+        return { success: true, data: mapped };
+    } catch {
+        try {
+            const payments = await db.commissionPayment.findMany({
+                orderBy: { paymentDate: 'desc' }
+            });
+            return { success: true, data: payments as unknown as CommissionPayment[] };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 }

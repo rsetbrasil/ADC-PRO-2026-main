@@ -3,14 +3,33 @@
 import { db } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { User } from '@/lib/types';
+import { createClient } from '@supabase/supabase-js';
 
 export async function getUsersAction() {
     try {
-        const allUsers = await db.user.findMany();
-        return { success: true, data: allUsers as unknown as User[] };
-    } catch (error: any) {
-        console.error('Error fetching users:', error);
-        return { success: false, error: error.message };
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data, error: sError } = await supabase
+            .from('users')
+            .select('*');
+        if (sError) throw sError;
+        const mapped: User[] = (data || []).map((u: any) => ({
+            id: u.id,
+            username: u.username,
+            password: u.password || undefined,
+            name: u.name,
+            role: u.role,
+            canBeAssigned: u.can_be_assigned ?? true,
+        }));
+        return { success: true, data: mapped };
+    } catch {
+        try {
+            const allUsers = await db.user.findMany();
+            return { success: true, data: allUsers as unknown as User[] };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
     }
 }
 
@@ -88,4 +107,3 @@ export async function restoreUsersAction(usersToRestore: User[]) {
         return { success: false, error: error.message };
     }
 }
-

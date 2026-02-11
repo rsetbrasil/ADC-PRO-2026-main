@@ -202,26 +202,50 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const deleteOrder = async (orderId: string, logAction: LogAction, user: User | null) => {
-    const res = await moveOrderToTrashAction(orderId);
-    if (res.success) {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Excluído' } : o));
+    const previousOrder = orders.find(o => o.id === orderId);
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: 'Excluído' } : o));
+    try {
+      const res = await moveOrderToTrashAction(orderId);
+      if (!res.success) throw new Error(res.error || 'Falha ao mover para lixeira');
       logAction('Exclusão de Pedido', `Pedido ${orderId} movido para lixeira.`, user);
+      fetchData();
+    } catch (e: any) {
+      if (previousOrder) {
+        setOrders(prev => prev.map(o => o.id === orderId ? previousOrder : o));
+      }
+      toast({ title: "Erro", description: e?.message || 'Não foi possível excluir o pedido.', variant: "destructive" });
     }
   };
 
   const permanentlyDeleteOrder = async (orderId: string, logAction: LogAction, user: User | null) => {
-    const res = await permanentlyDeleteOrderAction(orderId);
-    if (res.success) {
-      setOrders(prev => prev.filter(o => o.id !== orderId));
+    const previousOrder = orders.find(o => o.id === orderId);
+    setOrders(prev => prev.filter(o => o.id !== orderId));
+    try {
+      const res = await permanentlyDeleteOrderAction(orderId);
+      if (!res.success) throw new Error(res.error || 'Falha ao excluir permanentemente');
       logAction('Exclusão Permanente', `Pedido ${orderId} excluído.`, user);
+      fetchData();
+    } catch (e: any) {
+      if (previousOrder) {
+        setOrders(prev => [previousOrder, ...prev]);
+      }
+      toast({ title: "Erro", description: e?.message || 'Não foi possível excluir o pedido.', variant: "destructive" });
     }
   };
 
   const updateOrderStatus = async (orderId: string, status: Order['status'], logAction: LogAction, user: User | null) => {
-    const res = await updateOrderStatusAction(orderId, status, user);
-    if (res.success) {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    const previousOrder = orders.find(o => o.id === orderId);
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    try {
+      const res = await updateOrderStatusAction(orderId, status, user);
+      if (!res.success) throw new Error(res.error || 'Falha ao atualizar status');
       logAction('Status Atualizado', `Pedido ${orderId} alterado para ${status}.`, user);
+      fetchData();
+    } catch (e: any) {
+      if (previousOrder) {
+        setOrders(prev => prev.map(o => o.id === orderId ? previousOrder : o));
+      }
+      toast({ title: "Erro", description: e?.message || 'Não foi possível atualizar o status.', variant: "destructive" });
     }
   };
 
@@ -357,14 +381,19 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       updatedOrder.installments = 0;
     }
 
-    // Call Server Action
-    const res = await import('@/app/actions/admin/orders').then(mod => mod.updateOrderDetailsAction(orderId, updatedOrder));
+    setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    try {
+      const res = await import('@/app/actions/admin/orders').then(mod => mod.updateOrderDetailsAction(orderId, updatedOrder));
 
-    if (res.success) {
-      setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
-      logAction('Atualização de Pedido', `Detalhes do pedido ${orderId} atualizados.`, user);
-    } else {
-      toast({ title: "Erro ao atualizar", description: res.error, variant: "destructive" });
+      if (res.success) {
+        logAction('Atualização de Pedido', `Detalhes do pedido ${orderId} atualizados.`, user);
+        fetchData();
+      } else {
+        throw new Error(res.error || 'Falha ao atualizar pedido');
+      }
+    } catch (e: any) {
+      setOrders(prev => prev.map(o => o.id === orderId ? currentOrder : o));
+      toast({ title: "Erro ao atualizar", description: e?.message || 'Não foi possível atualizar o pedido.', variant: "destructive" });
     }
   };
 
