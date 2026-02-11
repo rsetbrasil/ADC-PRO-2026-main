@@ -8,18 +8,7 @@ import { useAudit } from './AuditContext';
 import { useAuth } from './AuthContext';
 import type { StoreSettings } from '@/lib/types';
 import { getSettingsAction, updateSettingsAction } from '@/app/actions/settings';
-
-const initialSettings: StoreSettings = {
-    storeName: 'ADC Móveis',
-    storeCity: '',
-    storeAddress: '',
-    pixKey: '',
-    storePhone: '',
-    logoUrl: '',
-    accessControlEnabled: false,
-    commercialHourStart: '08:00',
-    commercialHourEnd: '18:00',
-};
+import { initialSettings } from '@/lib/settings-defaults';
 
 interface SettingsContextType {
     settings: StoreSettings;
@@ -115,6 +104,5 @@ export const useSettings = () => {
     }
     return context;
 };
-
 
 

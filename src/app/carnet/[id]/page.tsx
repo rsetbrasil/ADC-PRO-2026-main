@@ -14,7 +14,8 @@ import { generatePixPayload } from '@/lib/pix';
 import PixQRCode from '@/components/PixQRCode';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useData } from '@/context/DataContext';
-import { getSettingsAction, initialSettings } from '@/app/actions/settings';
+import { getSettingsAction } from '@/app/actions/settings';
+import { initialSettings } from '@/lib/settings-defaults';
 import { getOrderForCarnetAction } from '@/app/actions/orders-fetcher';
 
 // ... (imports remain the same, except supabase)

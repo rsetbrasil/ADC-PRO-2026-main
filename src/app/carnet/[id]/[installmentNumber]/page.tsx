@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import Logo from '@/components/Logo';
 import { getSettingsAction } from '@/app/actions/settings';
 import { getOrderForCarnetAction } from '@/app/actions/orders-fetcher';
+import { initialSettings } from '@/lib/settings-defaults';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -109,14 +110,6 @@ function ReceiptContent({ order, installment, settings, via }: { order: Order, i
         </div>
     );
 }
-
-const initialSettings: StoreSettings = {
-    storeName: '',
-    storeCity: '',
-    storeAddress: '',
-    pixKey: '',
-    storePhone: ''
-};
 
 export default function SingleInstallmentPage() {
     const params = useParams();

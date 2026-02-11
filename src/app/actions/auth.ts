@@ -35,75 +35,161 @@ export async function getUsersAction() {
 
 export async function createUserAction(data: Omit<User, 'id'>) {
     try {
-        // Prisma can autogenerate UUIDs if configured in schema.
-        // But our User type might expect specific ID format or logic.
-        // Schema has @default(uuid()), so let's try relying on that or manually if needed.
-        // We'll trust Prisma default or if manual ID needed.
-        // Existing logic used manual ID.
-        // Let's rely on Prisma UUID unless we need specific format.
-        // The type User expects { id: string, ... }
+        if (!data.password) {
+            return { success: false, error: 'Senha é obrigatória.' };
+        }
 
-        const newUser = await db.user.create({
-            data: {
-                ...data,
-                canBeAssigned: data.canBeAssigned ?? true,
-            }
-        });
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        const payload: any = {
+            username: data.username,
+            password: data.password,
+            name: data.name,
+            role: data.role,
+            can_be_assigned: data.canBeAssigned ?? true,
+        };
+
+        const { data: created, error } = await supabase
+            .from('users')
+            .insert(payload)
+            .select('*')
+            .single();
+        if (error) throw error;
 
         revalidatePath('/admin');
         revalidatePath('/admin/configuracao');
-        return { success: true, data: newUser as unknown as User };
+        return {
+            success: true,
+            data: {
+                id: created.id,
+                username: created.username,
+                password: created.password || undefined,
+                name: created.name,
+                role: created.role,
+                canBeAssigned: created.can_be_assigned ?? true,
+            } as User
+        };
     } catch (error: any) {
-        console.error('Error creating user:', error);
-        return { success: false, error: error.message };
+        try {
+            if (!data.password) {
+                return { success: false, error: 'Senha é obrigatória.' };
+            }
+
+            const newUser = await db.user.create({
+                data: {
+                    ...data,
+                    password: data.password,
+                    canBeAssigned: data.canBeAssigned ?? true,
+                }
+            });
+
+            revalidatePath('/admin');
+            revalidatePath('/admin/configuracao');
+            return { success: true, data: newUser as unknown as User };
+        } catch (e: any) {
+            return { success: false, error: e?.message || error?.message || 'Erro ao criar usuário.' };
+        }
     }
 }
 
 export async function updateUserAction(userId: string, data: Partial<Omit<User, 'id'>>) {
     try {
-        await db.user.update({
-            where: { id: userId },
-            data: data
-        });
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        const payload: any = {};
+        if (data.username !== undefined) payload.username = data.username;
+        if (data.password !== undefined) payload.password = data.password;
+        if (data.name !== undefined) payload.name = data.name;
+        if (data.role !== undefined) payload.role = data.role;
+        if (data.canBeAssigned !== undefined) payload.can_be_assigned = data.canBeAssigned;
+
+        const { error } = await supabase.from('users').update(payload).eq('id', userId);
+        if (error) throw error;
+
         revalidatePath('/admin');
         revalidatePath('/admin/configuracao');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        try {
+            await db.user.update({
+                where: { id: userId },
+                data: data
+            });
+            revalidatePath('/admin');
+            revalidatePath('/admin/configuracao');
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, error: e?.message || error?.message };
+        }
     }
 }
 
 export async function deleteUserAction(userId: string) {
     try {
-        await db.user.delete({
-            where: { id: userId }
-        });
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) throw error;
+
         revalidatePath('/admin');
         revalidatePath('/admin/configuracao');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        try {
+            await db.user.delete({
+                where: { id: userId }
+            });
+            revalidatePath('/admin');
+            revalidatePath('/admin/configuracao');
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, error: e?.message || error?.message };
+        }
     }
 }
 
 export async function restoreUsersAction(usersToRestore: User[]) {
     try {
-        // Transactional upsert loop or createMany if strictly creating.
-        // Restore implies they might exist or not.
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        await db.$transaction(
-            usersToRestore.map(u =>
-                db.user.upsert({
-                    where: { id: u.id },
-                    update: u,
-                    create: u
-                })
-            )
-        );
+        const payload = (usersToRestore || []).map((u) => ({
+            id: u.id,
+            username: u.username,
+            password: u.password || '',
+            name: u.name,
+            role: u.role,
+            can_be_assigned: u.canBeAssigned ?? true,
+        }));
+
+        const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
+        if (error) throw error;
 
         revalidatePath('/admin');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        try {
+            await db.$transaction(
+                usersToRestore.map(u =>
+                    db.user.upsert({
+                        where: { id: u.id },
+                        update: { ...u, password: u.password || '' } as any,
+                        create: { ...u, password: u.password || '' } as any
+                    })
+                )
+            );
+
+            revalidatePath('/admin');
+            return { success: true };
+        } catch (e: any) {
+            return { success: false, error: e?.message || error?.message };
+        }
     }
 }

@@ -6,7 +6,7 @@ import { CustomerInfo, Order } from '@/lib/types';
 export async function customerLoginAction(cpf: string) {
     try {
         const normalizedCpf = cpf.replace(/\D/g, '');
-        const customer = await db.customer.findUnique({
+        const customer = await db.customer.findFirst({
             where: { cpf: normalizedCpf }
         });
 

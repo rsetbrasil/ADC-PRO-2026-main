@@ -171,7 +171,6 @@ export async function recordInstallmentPaymentAction(orderId: string, installmen
         } catch (error: any) {
             return { success: false, error: error.message };
         }
-        return { success: false, error: error.message };
     }
 }
 

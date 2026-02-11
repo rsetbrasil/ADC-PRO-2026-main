@@ -131,7 +131,7 @@ export async function getAvariasAction() {
     } catch {
         try {
             const avarias = await db.avaria.findMany({
-                orderBy: { createdAt: 'desc' }
+                orderBy: { id: 'desc' }
             });
             return { success: true, data: avarias as unknown as Avaria[] };
         } catch (error: any) {

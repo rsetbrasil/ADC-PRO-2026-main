@@ -3,19 +3,7 @@
 import { db } from '@/lib/db';
 import { StoreSettings } from '@/lib/types';
 import { createClient } from '@supabase/supabase-js';
-
-// Configurações padrão (não exportado - apenas para uso interno)
-const initialSettings: StoreSettings = {
-    storeName: 'ADC Móveis',
-    storeCity: '',
-    storeAddress: '',
-    pixKey: '',
-    storePhone: '',
-    logoUrl: '',
-    accessControlEnabled: false,
-    commercialHourStart: '08:00',
-    commercialHourEnd: '18:00',
-};
+import { initialSettings } from '@/lib/settings-defaults';
 
 export async function getSettingsAction() {
     try {

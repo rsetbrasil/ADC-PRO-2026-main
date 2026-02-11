@@ -58,8 +58,7 @@ export async function resetAllAdminDataAction(user: User | null) {
             db.commissionPayment.deleteMany({}),
             db.stockAudit.deleteMany({}),
             db.avaria.deleteMany({}),
-            db.chatSession.deleteMany({}),
-            db.chatMessage.deleteMany({})
+            db.cashSession.deleteMany({})
         ]);
         revalidatePath('/admin');
         return { success: true };

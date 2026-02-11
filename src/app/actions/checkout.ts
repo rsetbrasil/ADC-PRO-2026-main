@@ -55,7 +55,7 @@ export async function findCustomerByCpfAction(cpf: string) {
         return { success: true, data: null };
     } catch {
         try {
-            const customer = await db.customer.findUnique({
+            const customer = await db.customer.findFirst({
                 where: { cpf }
             });
             if (customer) return { success: true, data: customer as unknown as CustomerInfo, source: 'active' };
