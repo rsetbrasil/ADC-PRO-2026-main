@@ -50,7 +50,7 @@ export async function resetFinancialsAction(user: User | null) {
 
 export async function resetAllAdminDataAction(user: User | null) {
     try {
-        await db.$transaction([
+        const tx: any[] = [
             db.order.deleteMany({}),
             db.product.deleteMany({}),
             db.customer.deleteMany({}),
@@ -58,8 +58,14 @@ export async function resetAllAdminDataAction(user: User | null) {
             db.commissionPayment.deleteMany({}),
             db.stockAudit.deleteMany({}),
             db.avaria.deleteMany({}),
-            db.cashSession.deleteMany({})
-        ]);
+        ];
+
+        const anyDb = db as any;
+        if (anyDb.cashSession?.deleteMany) tx.push(anyDb.cashSession.deleteMany({}));
+        if (anyDb.chatSession?.deleteMany) tx.push(anyDb.chatSession.deleteMany({}));
+        if (anyDb.chatMessage?.deleteMany) tx.push(anyDb.chatMessage.deleteMany({}));
+
+        await db.$transaction(tx);
         revalidatePath('/admin');
         return { success: true };
     } catch (error: any) {
