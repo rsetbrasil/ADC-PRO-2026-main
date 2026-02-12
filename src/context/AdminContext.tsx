@@ -118,6 +118,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
   const { user, users } = useAuth();
   const isFetching = useRef(false);
+  const hasPaginatedOrdersRef = useRef(false);
 
   // Use local state for orders, etc.
   const [orders, setOrders] = useState<Order[]>([]);
@@ -130,6 +131,28 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [avarias, setAvarias] = useState<Avaria[]>([]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [deletedCustomers, setDeletedCustomers] = useState<CustomerInfo[]>([]);
+
+  const onlyDigits = (value?: string) => String(value || '').replace(/\D/g, '');
+
+  const getCustomerKey = (customer?: { cpf?: string; name?: string; phone?: string } | null) => {
+    if (!customer) return '';
+    const cpf = onlyDigits(customer.cpf);
+    if (cpf) return cpf;
+    const name = String(customer.name || '').trim();
+    const phone = String(customer.phone || '').trim();
+    if (!name && !phone) return '';
+    return `${name}-${phone}`;
+  };
+
+  const mergeOrdersById = (prev: Order[], fresh: Order[]) => {
+    const byId = new Map<string, Order>();
+    for (const o of prev) byId.set(o.id, o);
+    for (const o of fresh) {
+      const current = byId.get(o.id);
+      byId.set(o.id, current ? ({ ...current, ...o } as Order) : o);
+    }
+    return Array.from(byId.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
 
   // Polling Function
   const fetchData = useCallback(async () => {
@@ -144,9 +167,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     ]);
 
     if (ordersRes.status === 'fulfilled' && ordersRes.value.success && ordersRes.value.data) {
-      setOrders(ordersRes.value.data);
-      setOrdersNextCursor(ordersRes.value.nextCursor || null);
-      setHasMoreOrders(!!ordersRes.value.nextCursor);
+      const fresh = ordersRes.value.data as Order[];
+      setOrders((prev) => mergeOrdersById(prev, fresh));
+      if (!hasPaginatedOrdersRef.current) {
+        setOrdersNextCursor(ordersRes.value.nextCursor || null);
+        setHasMoreOrders(!!ordersRes.value.nextCursor);
+      }
     }
     if (customersRes.status === 'fulfilled' && customersRes.value.success && customersRes.value.data) {
       setCustomers(customersRes.value.data);
@@ -173,6 +199,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       const res = await fetch(`/api/admin/orders?limit=40&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
       if (!res?.success || !res?.data) return;
 
+      hasPaginatedOrdersRef.current = true;
       const next = res.nextCursor || null;
       setOrdersNextCursor(next);
       setHasMoreOrders(!!next);
@@ -183,7 +210,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         for (const o of res.data as Order[]) {
           if (!seen.has(o.id)) merged.push(o);
         }
-        return merged;
+        return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       });
     } finally {
       setIsLoadingMoreOrders(false);
@@ -591,6 +618,9 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     await resetOrdersAction(user);
     logAction('Reset de Pedidos', 'Todos os pedidos foram apagados.', user);
     setOrders([]);
+    setOrdersNextCursor(null);
+    setHasMoreOrders(true);
+    hasPaginatedOrdersRef.current = false;
   };
   const resetProducts = async (logAction: LogAction, user: User | null) => {
     await resetProductsAction(user);
@@ -605,12 +635,57 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     logAction('Reset Geral', 'Todos os dados do sistema foram apagados.', user);
     setOrders([]);
     setCustomers([]);
+    setOrdersNextCursor(null);
+    setHasMoreOrders(true);
+    hasPaginatedOrdersRef.current = false;
   };
 
   // Computed
   const customersForUI = useMemo(() => customers, [customers]);
-  const customerOrders = useMemo(() => ({}), [orders]);
-  const customerFinancials = useMemo(() => ({}), [orders]);
+  const customerOrders = useMemo(() => {
+    const out: { [key: string]: Order[] } = {};
+    for (const order of orders) {
+      const key = getCustomerKey(order.customer as any);
+      if (!key) continue;
+      if (!out[key]) out[key] = [];
+      out[key].push(order);
+    }
+    for (const key of Object.keys(out)) {
+      out[key] = out[key].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+    return out;
+  }, [orders]);
+
+  const customerFinancials = useMemo(() => {
+    const out: { [key: string]: { totalComprado: number; totalPago: number; saldoDevedor: number } } = {};
+
+    const getTotalPago = (order: Order) => {
+      if (order.paymentMethod === 'Crediário') {
+        return (order.installmentDetails || []).reduce((s, inst) => s + (inst.paidAmount || 0), 0);
+      }
+      if (order.paymentMethod === 'Dinheiro') {
+        return order.total || 0;
+      }
+      if (order.paymentMethod === 'Pix') {
+        const isLegacyPix = !order.asaas?.paymentId;
+        const isPaid = isLegacyPix || !!order.asaas?.paidAt;
+        return isPaid ? (order.total || 0) : 0;
+      }
+      return 0;
+    };
+
+    for (const order of orders) {
+      if (order.status === 'Excluído') continue;
+      const key = getCustomerKey(order.customer as any);
+      if (!key) continue;
+      const current = out[key] || { totalComprado: 0, totalPago: 0, saldoDevedor: 0 };
+      current.totalComprado += order.total || 0;
+      current.totalPago += getTotalPago(order);
+      current.saldoDevedor = current.totalComprado - current.totalPago;
+      out[key] = current;
+    }
+    return out;
+  }, [orders]);
   const financialSummary = useMemo(() => ({ totalVendido: 0, totalRecebido: 0, totalPendente: 0, lucroBruto: 0, monthlyData: [] }), [orders]);
   const commissionSummary = useMemo(() => ({ totalPendingCommission: 0, commissionsBySeller: [] }), [orders]);
 
