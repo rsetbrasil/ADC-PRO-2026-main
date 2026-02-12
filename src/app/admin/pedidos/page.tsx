@@ -494,6 +494,18 @@ export default function OrdersAdminPage() {
         });
     };
 
+    const handleUnassignSeller = (order: Order) => {
+        const detailsToUpdate: Partial<Order> = {
+            sellerId: null as any,
+            sellerName: null as any,
+        };
+        updateOrderDetails(order.id, detailsToUpdate, logAction, user);
+        toast({
+            title: "Vendedor removido",
+            description: `O pedido #${order.id} agora está sem vendedor.`,
+        });
+    };
+
     const handleAssignToMe = (order: Order) => {
         if (!user) return;
         if (user.canBeAssigned === false) return;
@@ -793,7 +805,9 @@ Não esqueça de enviar o comprovante!`;
                                                                     </div>
                                                                 </TableCell>
                                                                 <TableCell className="p-2 text-xs truncate max-w-[150px]">{order.items.length ? order.items.map(item => item.name).join(', ') : '—'}</TableCell>
-                                                                <TableCell className="p-2 truncate max-w-[120px]">{order.sellerName}</TableCell>
+                                                                <TableCell className="p-2 truncate max-w-[120px]">
+                                                                    {order.sellerName && order.sellerName.trim() !== '' ? order.sellerName : 'Não atribuído'}
+                                                                </TableCell>
                                                                 <TableCell className={cn("p-2 whitespace-nowrap", isOverdue && "text-destructive font-semibold", isPaidOff && !nextPendingInstallment && "text-green-600 font-semibold")}>
                                                                     {nextPendingInstallment ? format(new Date(nextPendingInstallment.dueDate), 'dd/MM/yy') : (isPaidOff ? 'Quitado' : '-')}
                                                                 </TableCell>
@@ -844,6 +858,11 @@ Não esqueça de enviar o comprovante!`;
                                                                                 {user?.canBeAssigned !== false && (
                                                                                     <DropdownMenuItem onClick={() => handleAssignToMe(order)}>
                                                                                         Atribuir a mim
+                                                                                    </DropdownMenuItem>
+                                                                                )}
+                                                                                {(order.sellerId || order.sellerName) && (
+                                                                                    <DropdownMenuItem onClick={() => handleUnassignSeller(order)}>
+                                                                                        Não atribuído
                                                                                     </DropdownMenuItem>
                                                                                 )}
                                                                                 {user?.canBeAssigned !== false && assignableSellers.length > 0 && <Separator />}

@@ -404,9 +404,17 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const recordInstallmentPayment = async (orderId: string, installmentNumber: number, payment: Omit<Payment, 'receivedBy'>, logAction: LogAction, user: User | null) => {
-    // Implement using existing logic or action
-    // For now, placeholder to allow compile
-    console.log('Record payment', orderId, installmentNumber);
+    try {
+      const res = await recordInstallmentPaymentAction(orderId, installmentNumber, payment);
+      if (res.success) {
+        logAction('Pagamento de Parcela', `Pagamento da parcela ${installmentNumber} do pedido ${orderId} registrado.`, user);
+        fetchData();
+      } else {
+        throw new Error(res.error || 'Falha ao registrar pagamento');
+      }
+    } catch (e: any) {
+      toast({ title: "Erro ao registrar pagamento", description: e?.message || 'Não foi possível registrar o pagamento.', variant: "destructive" });
+    }
   };
 
   const addProduct = async (productData: Omit<Product, 'id' | 'data-ai-hint' | 'createdAt'>, logAction: LogAction, user: User | null) => {
@@ -454,9 +462,72 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     }
     return { newCustomers: 0, updatedOrders: 0 };
   };
-  const reversePayment = async () => { };
-  const updateInstallmentDueDate = async () => { };
-  const updateInstallmentAmount = async () => { };
+  const reversePayment = async (orderId: string, installmentNumber: number, paymentId: string, logAction: LogAction, user: User | null) => {
+    try {
+      const { reversePaymentAction } = await import('@/app/actions/admin/orders');
+      const res = await reversePaymentAction(orderId, installmentNumber, paymentId);
+      if (res.success) {
+        logAction('Estorno de Pagamento', `Estorno da parcela ${installmentNumber} do pedido ${orderId}.`, user);
+        fetchData();
+      } else {
+        throw new Error(res.error || 'Falha ao estornar pagamento');
+      }
+    } catch (e: any) {
+      toast({ title: "Erro ao estornar", description: e?.message || 'Não foi possível estornar o pagamento.', variant: "destructive" });
+    }
+  };
+
+  const updateInstallmentDueDate = async (orderId: string, installmentNumber: number, newDueDate: Date, logAction: LogAction, user: User | null) => {
+    const currentOrder = orders.find(o => o.id === orderId);
+    if (!currentOrder) return;
+
+    const updatedInstallments = (currentOrder.installmentDetails || []).map(inst =>
+      inst.installmentNumber === installmentNumber ? { ...inst, dueDate: newDueDate.toISOString() } : inst
+    );
+
+    const updatedOrder = { ...currentOrder, installmentDetails: updatedInstallments };
+
+    setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    try {
+      const { updateOrderDetailsAction } = await import('@/app/actions/admin/orders');
+      const res = await updateOrderDetailsAction(orderId, { installmentDetails: updatedInstallments });
+      if (res.success) {
+        logAction('Data de Vencimento Alterada', `Parcela ${installmentNumber} do pedido ${orderId} para ${newDueDate.toLocaleDateString()}.`, user);
+        fetchData();
+      } else {
+        throw new Error(res.error || 'Falha ao atualizar data de vencimento');
+      }
+    } catch (e: any) {
+      setOrders(prev => prev.map(o => o.id === orderId ? currentOrder : o));
+      toast({ title: "Erro ao atualizar", description: e?.message || 'Não foi possível atualizar a data.', variant: "destructive" });
+    }
+  };
+
+  const updateInstallmentAmount = async (orderId: string, installmentNumber: number, newAmount: number, logAction: LogAction, user: User | null) => {
+    const currentOrder = orders.find(o => o.id === orderId);
+    if (!currentOrder) return;
+
+    const updatedInstallments = (currentOrder.installmentDetails || []).map(inst =>
+      inst.installmentNumber === installmentNumber ? { ...inst, amount: newAmount } : inst
+    );
+
+    const updatedOrder = { ...currentOrder, installmentDetails: updatedInstallments };
+
+    setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    try {
+      const { updateOrderDetailsAction } = await import('@/app/actions/admin/orders');
+      const res = await updateOrderDetailsAction(orderId, { installmentDetails: updatedInstallments });
+      if (res.success) {
+        logAction('Valor da Parcela Alterado', `Parcela ${installmentNumber} do pedido ${orderId} para ${newAmount.toFixed(2)}.`, user);
+        fetchData();
+      } else {
+        throw new Error(res.error || 'Falha ao atualizar valor da parcela');
+      }
+    } catch (e: any) {
+      setOrders(prev => prev.map(o => o.id === orderId ? currentOrder : o));
+      toast({ title: "Erro ao atualizar", description: e?.message || 'Não foi possível atualizar o valor.', variant: "destructive" });
+    }
+  };
   const updateCustomer = async (oldCustomer: CustomerInfo, updatedCustomerData: CustomerInfo, logAction: LogAction, user: User | null) => {
     const res = await updateCustomerAction(updatedCustomerData, user);
     if (res.success) {

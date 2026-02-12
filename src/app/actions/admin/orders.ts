@@ -9,6 +9,21 @@ let cachedOrdersColumnStyle: 'camel' | 'snake' | null = null;
 let cachedAdminOrders: { at: number; data: Order[] } | null = null;
 const ADMIN_ORDERS_CACHE_TTL_MS = 10000;
 
+function invalidateApiCache() {
+    // Invalida o cache local do Server Action
+    cachedAdminOrders = null;
+    
+    // Invalida o cache global usado pela API Route (/api/admin/orders)
+    if (typeof globalThis !== 'undefined') {
+        const cache = (globalThis as any).__adminOrdersApiCache;
+        if (cache) {
+            if (cache.hotCache) cache.hotCache.clear();
+            if (cache.inflight) cache.inflight.clear();
+            cache.stale = null;
+        }
+    }
+}
+
 async function getOrdersExistingColumns(supabase: any): Promise<Set<string> | null> {
     try {
         const { data, error } = await supabase.from('orders').select('*').limit(1);
@@ -73,8 +88,31 @@ async function detectOrdersColumnStyle(supabase: any): Promise<'camel' | 'snake'
         cachedOrdersColumnStyle = 'camel';
         return cachedOrdersColumnStyle;
     }
+
     const keys = Object.keys(row);
-    cachedOrdersColumnStyle = keys.some((k) => k.includes('_')) ? 'snake' : 'camel';
+
+    const hasCamelHints =
+        keys.includes('sellerId') ||
+        keys.includes('downPayment') ||
+        keys.includes('firstDueDate') ||
+        keys.includes('createdAt');
+
+    const hasSnakeHints =
+        keys.includes('seller_id') ||
+        keys.includes('down_payment') ||
+        keys.includes('first_due_date') ||
+        keys.includes('created_at');
+
+    if (hasCamelHints && !hasSnakeHints) {
+        cachedOrdersColumnStyle = 'camel';
+    } else if (hasSnakeHints && !hasCamelHints) {
+        cachedOrdersColumnStyle = 'snake';
+    } else if (hasCamelHints && hasSnakeHints) {
+        cachedOrdersColumnStyle = 'camel';
+    } else {
+        cachedOrdersColumnStyle = keys.some((k) => k.includes('_')) ? 'snake' : 'camel';
+    }
+
     return cachedOrdersColumnStyle;
 }
 
@@ -225,7 +263,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
                 const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
                 if (error) throw error;
 
-                cachedAdminOrders = null;
+                invalidateApiCache();
                 revalidatePath('/admin/pedidos');
                 return { success: true };
             }
@@ -236,7 +274,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
         const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
         if (error) throw error;
 
-        cachedAdminOrders = null;
+        invalidateApiCache();
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -255,7 +293,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
             
             if (fallbackError) throw fallbackError;
             
-            cachedAdminOrders = null;
+            invalidateApiCache();
             revalidatePath('/admin/pedidos');
             return { success: true };
         } catch (finalError: any) {
@@ -275,7 +313,7 @@ export async function moveOrderToTrashAction(orderId: string) {
             .eq('id', orderId);
         if (error) throw error;
 
-        cachedAdminOrders = null;
+        invalidateApiCache();
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -294,7 +332,7 @@ export async function permanentlyDeleteOrderAction(orderId: string) {
             .eq('id', orderId);
         if (error) throw error;
 
-        cachedAdminOrders = null;
+        invalidateApiCache();
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -338,7 +376,7 @@ export async function recordInstallmentPaymentAction(orderId: string, installmen
             .eq('id', orderId);
         if (error) throw error;
 
-        cachedAdminOrders = null;
+        invalidateApiCache();
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -362,10 +400,64 @@ export async function updateOrderDetailsAction(orderId: string, data: Partial<Or
             .eq('id', orderId);
         if (error) throw error;
 
-        cachedAdminOrders = null;
+        invalidateApiCache();
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
         return { success: false, error: error?.message || 'Falha ao atualizar pedido' };
+    }
+}
+
+// Reverse Payment
+export async function reversePaymentAction(orderId: string, installmentNumber: number, paymentId: string) {
+    try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const style = await detectOrdersColumnStyle(supabase);
+        const column = style === 'snake' ? 'installment_details' : 'installmentDetails';
+
+        const { data: order, error: fError } = await supabase
+            .from('orders')
+            .select(column)
+            .eq('id', orderId)
+            .maybeSingle();
+
+        if (fError) throw fError;
+        if (!order) throw new Error('Order not found');
+
+        const installments = ((order as any)[column] as any) || [];
+        const updatedInstallments = installments.map((inst: any) => {
+            if (inst.installmentNumber === installmentNumber) {
+                const payments = inst.payments || [];
+                const paymentToReverse = payments.find((p: any) => p.id === paymentId);
+                if (!paymentToReverse) return inst;
+
+                const filteredPayments = payments.filter((p: any) => p.id !== paymentId);
+                const newPaid = Math.max(0, (inst.paidAmount || 0) - (paymentToReverse.amount || 0));
+                const newStatus = newPaid <= 0 ? 'Pendente' : 'Parcial';
+
+                return {
+                    ...inst,
+                    paidAmount: newPaid,
+                    status: newStatus,
+                    payments: filteredPayments
+                };
+            }
+            return inst;
+        });
+
+        const { error } = await supabase
+            .from('orders')
+            .update({ [column]: updatedInstallments })
+            .eq('id', orderId);
+
+        if (error) throw error;
+
+        invalidateApiCache();
+        revalidatePath('/admin/pedidos');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao estornar pagamento' };
     }
 }
