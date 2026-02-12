@@ -289,6 +289,28 @@ export default function OrdersAdminPage() {
         return { paginatedDeletedOrders: paginated, totalDeletedPages: total };
     }, [deletedOrders, deletedPage]);
 
+    const handleNextActivePage = async () => {
+        if (activePage < totalActivePages) {
+            setActivePage(p => p + 1);
+            return;
+        }
+        if (hasMoreOrders && !isLoadingMoreOrders) {
+            await loadMoreOrders();
+            setActivePage(p => p + 1);
+        }
+    };
+
+    const handleNextDeletedPage = async () => {
+        if (deletedPage < totalDeletedPages) {
+            setDeletedPage(p => p + 1);
+            return;
+        }
+        if (hasMoreOrders && !isLoadingMoreOrders) {
+            await loadMoreOrders();
+            setDeletedPage(p => p + 1);
+        }
+    };
+
 
 
     const handleFilterChange = (filterName: keyof typeof filters, value: string | boolean) => {
@@ -483,6 +505,24 @@ Não esqueça de enviar o comprovante!`;
     const isManagerOrAdmin = user?.role === 'admin' || user?.role === 'gerente';
     const canEditInstallment = user?.role === 'admin' || user?.role === 'gerente' || user?.role === 'vendedor';
 
+
+    useEffect(() => {
+        if (!isClient) return;
+        const currentLoadedCount = activeOrders.length;
+        const requiredCount = activePage * ORDERS_PER_PAGE;
+        if (requiredCount > currentLoadedCount && hasMoreOrders && !isLoadingMoreOrders) {
+            loadMoreOrders();
+        }
+    }, [isClient, activePage, activeOrders.length, hasMoreOrders, isLoadingMoreOrders, loadMoreOrders]);
+
+    useEffect(() => {
+        if (!isClient) return;
+        const currentLoadedCount = deletedOrders.length;
+        const requiredCount = deletedPage * ORDERS_PER_PAGE;
+        if (requiredCount > currentLoadedCount && hasMoreOrders && !isLoadingMoreOrders) {
+            loadMoreOrders();
+        }
+    }, [isClient, deletedPage, deletedOrders.length, hasMoreOrders, isLoadingMoreOrders, loadMoreOrders]);
 
     if (!isClient) {
         return (
@@ -770,9 +810,14 @@ Não esqueça de enviar o comprovante!`;
                                                     Anterior
                                                 </Button>
                                                 <span className="text-sm">
-                                                    Página {activePage} de {totalActivePages}
+                                                    Página {activePage} de {totalActivePages}{hasMoreOrders ? '+' : ''}
                                                 </span>
-                                                <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.min(totalActivePages, p + 1))} disabled={activePage === totalActivePages}>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleNextActivePage}
+                                                    disabled={(activePage === totalActivePages && !hasMoreOrders) || isLoadingMoreOrders}
+                                                >
                                                     Próxima
                                                 </Button>
                                             </div>
@@ -780,7 +825,7 @@ Não esqueça de enviar o comprovante!`;
                                         {(hasMoreOrders || isLoadingMoreOrders) && (
                                             <div className="flex justify-center mt-4">
                                                 <Button variant="outline" onClick={loadMoreOrders} disabled={!hasMoreOrders || isLoadingMoreOrders}>
-                                                    {isLoadingMoreOrders ? 'Carregando...' : 'Carregar mais pedidos'}
+                                                    {isLoadingMoreOrders ? 'Carregando mais pedidos...' : 'Mais pedidos disponíveis'}
                                                 </Button>
                                             </div>
                                         )}
@@ -906,7 +951,12 @@ Não esqueça de enviar o comprovante!`;
                                                 <span className="text-sm">
                                                     Página {deletedPage} de {totalDeletedPages}
                                                 </span>
-                                                <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.min(totalDeletedPages, p + 1))} disabled={deletedPage === totalDeletedPages}>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={handleNextDeletedPage}
+                                                    disabled={(deletedPage === totalDeletedPages && !hasMoreOrders) || isLoadingMoreOrders}
+                                                >
                                                     Próxima
                                                 </Button>
                                             </div>

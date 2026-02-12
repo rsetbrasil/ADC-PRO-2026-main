@@ -3,25 +3,36 @@
 
 import { db } from '@/lib/db';
 import { Order } from '@/lib/types';
+import { createClient } from '@supabase/supabase-js';
+import { mapDbOrderToOrder } from '@/lib/supabase-mappers';
+
+function getSupabaseAdmin() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Supabase env ausente (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)');
+    }
+
+    return createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+}
 
 export async function getOrderForCarnetAction(orderId: string) {
     try {
-        const orderRecord = await db.order.findUnique({
-            where: { id: orderId }
-        });
+        const supabase = getSupabaseAdmin();
+        const { data: orderRecord, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .maybeSingle();
 
+        if (error) throw error;
         if (!orderRecord) {
             return { success: false, error: 'Pedido não encontrado' };
         }
 
-        // Parse JSON fields to match Order type
-        let order: Order = {
-            ...orderRecord,
-            items: typeof orderRecord.items === 'string' ? JSON.parse(orderRecord.items) : orderRecord.items,
-            installmentDetails: typeof orderRecord.installmentDetails === 'string' ? JSON.parse(orderRecord.installmentDetails) : orderRecord.installmentDetails,
-            customer: typeof orderRecord.customer === 'string' ? JSON.parse(orderRecord.customer) : orderRecord.customer,
-            asaas: typeof orderRecord.asaas === 'string' ? JSON.parse(orderRecord.asaas) : orderRecord.asaas,
-        } as unknown as Order;
+        let order = mapDbOrderToOrder(orderRecord);
 
         // Populate customer details if missing
         const cpf = (order.customer?.cpf || '').replace(/\D/g, '');

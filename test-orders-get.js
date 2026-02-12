@@ -23,6 +23,7 @@ const req = http.request(options, (res) => {
       const first = json?.data?.[0];
       console.log('SOURCE', json?.source);
       console.log('RECENT_META', json?.recentMeta);
+      console.log('NEXT_CURSOR', json?.nextCursor || null);
       console.log('FIRST', first?.id, first?.date);
       const itemsCount = Array.isArray(first?.items) ? first.items.length : 0;
       const nextPending = Array.isArray(first?.installmentDetails)
@@ -34,7 +35,7 @@ const req = http.request(options, (res) => {
       console.log('FIRST_NEXT_DUE', nextPending?.dueDate || null);
       console.log(body.slice(0, 300));
     } catch {
-      console.log(body.slice(0, 300));
+      console.log(body.slice(0, 2000));
     }
   });
 });

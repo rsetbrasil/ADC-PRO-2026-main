@@ -196,7 +196,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
     setIsLoadingMoreOrders(true);
     try {
-      const res = await fetch(`/api/admin/orders?limit=40&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
+      const res = await fetch(`/api/admin/orders?limit=20&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
       if (!res?.success || !res?.data) return;
 
       hasPaginatedOrdersRef.current = true;

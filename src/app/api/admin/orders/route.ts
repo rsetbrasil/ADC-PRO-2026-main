@@ -52,7 +52,7 @@ export async function GET(req: Request) {
     const id = searchParams.get('id');
 
     const defaultLimit = includeItems ? 40 : 20;
-    const maxLimit = includeItems ? 60 : 60;
+    const maxLimit = includeItems ? 60 : 40;
     const requestedLimit = Number(searchParams.get('limit') || String(defaultLimit));
     const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), maxLimit) : defaultLimit;
     const cursor = searchParams.get('cursor');
@@ -123,32 +123,87 @@ export async function GET(req: Request) {
       : 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,source,created_at,updated_at';
 
     const work = (async () => {
-      const ordered = cursor
-        ? await supabase.from('orders').select(selectList).lt('date', cursor).order('date', { ascending: false }).limit(limit)
-        : await supabase.from('orders').select(selectList).order('date', { ascending: false }).limit(limit);
+      const parseCursor = (raw: string | null) => {
+        if (!raw) return { date: null as string | null, id: null as string | null };
+        const s = String(raw);
+        const idx = s.lastIndexOf('|');
+        if (idx > 0 && idx < s.length - 1) {
+          return { date: s.slice(0, idx), id: s.slice(idx + 1) };
+        }
+        return { date: s, id: null };
+      };
 
-      if (ordered.error) {
-        const msg = String(ordered.error.message || '').toLowerCase();
-        if (msg.includes('statement timeout')) {
-          const byId = await supabase.from('orders').select(selectList).order('id', { ascending: false }).limit(Math.min(limit, 100));
-          if (!byId.error) {
-            const mapped = (byId.data || []).map(mapDbOrderToOrder);
-            const entry: CacheEntry = { at: now, data: mapped, source: 'by_id' };
-            return { entry, nextCursor: null };
+      const cursorParsed = parseCursor(cursor);
+      const cursorDate = cursorParsed.date;
+      const cursorId = cursorParsed.id;
+      const cursorTime = cursorDate ? Date.parse(cursorDate) : NaN;
+
+      const overfetchLimit = Math.min(limit * 2, 120);
+      const idPageRaw = cursorDate
+        ? await supabase
+            .from('orders')
+            .select('id,date')
+            .lte('date', cursorDate)
+            .order('date', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(overfetchLimit)
+        : await supabase.from('orders').select('id,date').order('date', { ascending: false }).order('id', { ascending: false }).limit(limit);
+      if (idPageRaw.error) throw idPageRaw.error;
+      let idPage = (idPageRaw.data || []) as any[];
+      if (cursorDate) {
+        idPage = idPage.filter((r) => {
+          const rowDate = String(r?.date || '');
+          const rowId = String(r?.id || '');
+          const rowTime = Date.parse(rowDate);
+
+          if (Number.isFinite(cursorTime) && Number.isFinite(rowTime)) {
+            if (rowTime < cursorTime) return true;
+            if (rowTime > cursorTime) return false;
+            return cursorId ? rowId < cursorId : false;
           }
 
-          const plain = await supabase.from('orders').select(selectList).limit(Math.min(limit, 60));
-          if (plain.error) throw plain.error;
-          const mapped = (plain.data || []).map(mapDbOrderToOrder);
-          const entry: CacheEntry = { at: now, data: mapped, source: 'plain' };
-          return { entry, nextCursor: null };
-        }
-        throw ordered.error;
+          if (rowDate < cursorDate) return true;
+          if (rowDate > cursorDate) return false;
+          return cursorId ? rowId < cursorId : false;
+        });
+      }
+      idPage = idPage.slice(0, limit);
+
+      const ids: string[] = idPage.map((r: any) => String(r.id)).filter((v: string) => Boolean(v));
+      if (ids.length === 0) {
+        const entry: CacheEntry = { at: now, data: [], source: 'by_date_ids' };
+        return { entry, nextCursor: null };
       }
 
-      const mapped = (ordered.data || []).map(mapDbOrderToOrder);
-      const nextCursor = (ordered.data || [])[(ordered.data || []).length - 1]?.date || null;
-      const entry: CacheEntry = { at: now, data: mapped, source: 'by_date' };
+
+      const fetchChunk = async (chunk: string[]): Promise<any[]> => {
+        const res = await supabase.from('orders').select(selectList).in('id', chunk);
+        if (!res.error) return res.data || [];
+        const msg = String(res.error.message || '').toLowerCase();
+        if (msg.includes('statement timeout') && chunk.length > 1) {
+          const mid = Math.ceil(chunk.length / 2);
+          const left = await fetchChunk(chunk.slice(0, mid));
+          const right = await fetchChunk(chunk.slice(mid));
+          return [...left, ...right];
+        }
+        throw res.error;
+      };
+
+      const byId = new Map<string, any>();
+      const chunkSize = 15;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const rows = await fetchChunk(chunk);
+        for (const r of rows) {
+          byId.set(String((r as any).id), r);
+        }
+      }
+      const orderedRows = ids.map((id) => byId.get(id)).filter(Boolean);
+
+      const mapped = orderedRows.map(mapDbOrderToOrder);
+      const last = idPage[idPage.length - 1];
+      const nextCursor = last?.date && last?.id ? `${String(last.date)}|${String(last.id)}` : null;
+      const entry: CacheEntry = { at: now, data: mapped, source: 'by_date_ids' };
       return { entry, nextCursor };
     })();
 
