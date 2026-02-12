@@ -7,6 +7,27 @@ import { mapDbOrderToOrder, mapOrderPatchToDb } from '@/lib/supabase-mappers';
 
 let cachedOrdersColumnStyle: 'camel' | 'snake' | null = null;
 
+async function getOrdersExistingColumns(supabase: any): Promise<Set<string> | null> {
+    try {
+        const { data, error } = await supabase.from('orders').select('*').limit(1);
+        if (error) return null;
+        const row = (data || [])[0] as Record<string, any> | undefined;
+        if (!row) return null;
+        return new Set(Object.keys(row));
+    } catch {
+        return null;
+    }
+}
+
+function filterPayloadByColumns(payload: Record<string, any>, columns: Set<string> | null): Record<string, any> {
+    if (!columns || columns.size === 0) return payload;
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(payload)) {
+        if (columns.has(key)) out[key] = value;
+    }
+    return out;
+}
+
 function calculateCommissionFromItems(items: any[], productCommission: Map<string, { type: string | null; value: number | null }>, fallbackPercentage = 5) {
     const toNumber = (value: unknown) => {
         if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -103,6 +124,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
         if (fetchError) throw fetchError;
         if (!row) throw new Error('Order not found');
 
+        const existingColumns = new Set(Object.keys(row as any));
         const current = mapDbOrderToOrder(row);
 
         if (status === 'Entregue') {
@@ -156,13 +178,12 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
                 const patch: Partial<Order> = {
                     status,
                     commission,
-                    commissionPaid: false,
-                    isCommissionManual: false,
                 };
                 if (sellerId && sellerId !== current.sellerId) patch.sellerId = sellerId;
                 if (sellerName && sellerName !== current.sellerName) patch.sellerName = sellerName;
 
-                const payload = mapOrderPatchToDb(patch, style);
+                const payloadRaw = mapOrderPatchToDb(patch, style);
+                const payload = filterPayloadByColumns(payloadRaw, existingColumns);
                 const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
                 if (error) throw error;
 
@@ -171,7 +192,8 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
             }
         }
 
-        const payload = mapOrderPatchToDb({ status }, style);
+        const payloadRaw = mapOrderPatchToDb({ status }, style);
+        const payload = filterPayloadByColumns(payloadRaw, existingColumns);
         const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
         if (error) throw error;
 
@@ -266,7 +288,9 @@ export async function updateOrderDetailsAction(orderId: string, data: Partial<Or
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
         const style = await detectOrdersColumnStyle(supabase);
-        const payload = mapOrderPatchToDb(data, style);
+        const existingColumns = await getOrdersExistingColumns(supabase);
+        const payloadRaw = mapOrderPatchToDb(data, style);
+        const payload = filterPayloadByColumns(payloadRaw, existingColumns);
         const { error } = await supabase
             .from('orders')
             .update(payload)
