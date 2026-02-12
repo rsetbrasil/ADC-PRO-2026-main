@@ -12,7 +12,8 @@
   "/api/audit/log/route": "app/api/audit/log/route.js",
   "/checkout/page": "app/checkout/page.js",
   "/order-confirmation/[id]/page": "app/order-confirmation/[id]/page.js",
-  "/(public)/page": "app/(public)/page.js",
-  "/admin/pedidos/page": "app/admin/pedidos/page.js",
-  "/admin/clientes/page": "app/admin/clientes/page.js"
+  "/admin/clientes/page": "app/admin/clientes/page.js",
+  "/admin/configuracao/page": "app/admin/configuracao/page.js",
+  "/admin/produtos/page": "app/admin/produtos/page.js",
+  "/admin/pedidos/page": "app/admin/pedidos/page.js"
 }
