@@ -1,34 +1,67 @@
 'use server';
 
-import { db } from '@/lib/db';
 import { CustomerInfo, User } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'crypto';
+
+const getSupabaseAdmin = () => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+        throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada no servidor.');
+    }
+    return createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+    });
+};
+
+const onlyDigits = (value?: string) => String(value || '').replace(/\D/g, '');
 
 export async function addCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
-        // Basic add logic
+        const supabase = getSupabaseAdmin();
+
+        const id = customerData.id || onlyDigits(customerData.cpf) || randomUUID();
         const code = customerData.code || `CLI-${Date.now()}`;
-        await db.customer.create({
-            data: {
-                ...customerData,
-                code,
-                id: customerData.id || `CUST-${Date.now()}`
-            }
+
+        const { error } = await supabase.from('customers').insert({
+            id,
+            code,
+            name: customerData.name,
+            cpf: customerData.cpf || null,
+            phone: customerData.phone || '',
+            phone2: customerData.phone2 || null,
+            phone3: customerData.phone3 || null,
+            email: customerData.email || null,
+            zip: customerData.zip || null,
+            address: customerData.address || null,
+            number: customerData.number || null,
+            complement: customerData.complement || null,
+            neighborhood: customerData.neighborhood || null,
+            city: customerData.city || null,
+            state: customerData.state || null,
+            password: customerData.password || null,
+            observations: customerData.observations || null,
+            sellerId: customerData.sellerId || null,
+            sellerName: customerData.sellerName || null,
+            blocked: !!customerData.blocked,
+            blockedReason: customerData.blockedReason || null,
+            rating: customerData.rating ?? null,
         });
+        if (error) throw error;
+
         revalidatePath('/admin/clientes');
-        return { success: true };
+        return { success: true, id };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Falha ao criar cliente' };
     }
 }
 
 
 export async function getCustomersAction() {
     try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const supabase = getSupabaseAdmin();
         const { data, error } = await supabase
             .from('customers')
             .select('*')
@@ -52,82 +85,98 @@ export async function getCustomersAction() {
             state: c.state || '',
             password: c.password || undefined,
             observations: c.observations || undefined,
-            sellerId: c.sellerId || undefined,
-            sellerName: c.sellerName || undefined,
+            sellerId: c.seller_id || c.sellerId || undefined,
+            sellerName: c.seller_name || c.sellerName || undefined,
             blocked: !!c.blocked,
-            blockedReason: c.blockedReason || undefined,
+            blockedReason: c.blocked_reason || c.blockedReason || undefined,
             rating: c.rating ?? undefined,
         }));
         return { success: true, data: mapped };
-    } catch {
-        try {
-            const customers = await db.customer.findMany({
-                orderBy: { name: 'asc' }
-            });
-            return { success: true, data: customers as unknown as CustomerInfo[] };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao buscar clientes' };
     }
 }
 
 export async function updateCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
-        await db.customer.update({
-            where: { id: customerData.id },
-            data: customerData
-        });
+        const supabase = getSupabaseAdmin();
+
+        const { error } = await supabase
+            .from('customers')
+            .update({
+                code: customerData.code || null,
+                name: customerData.name,
+                cpf: customerData.cpf || null,
+                phone: customerData.phone || '',
+                phone2: customerData.phone2 || null,
+                phone3: customerData.phone3 || null,
+                email: customerData.email || null,
+                zip: customerData.zip || null,
+                address: customerData.address || null,
+                number: customerData.number || null,
+                complement: customerData.complement || null,
+                neighborhood: customerData.neighborhood || null,
+                city: customerData.city || null,
+                state: customerData.state || null,
+                ...(customerData.password !== undefined ? { password: customerData.password || null } : {}),
+                observations: customerData.observations || null,
+                sellerId: customerData.sellerId || null,
+                sellerName: customerData.sellerName || null,
+                blocked: !!customerData.blocked,
+                blockedReason: customerData.blockedReason || null,
+                rating: customerData.rating ?? null,
+            })
+            .eq('id', customerData.id);
+        if (error) throw error;
+
         revalidatePath('/admin/clientes');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Falha ao atualizar cliente' };
     }
 }
 
 export async function deleteCustomerAction(id: string, user: User | null) {
     try {
-        await db.customer.update({
-            where: { id },
-            data: {
-                blocked: true,
-                blockedReason: 'Excluído',
-                // Soft delete logic can be enhanced
-            }
-        });
-        // Or actually delete: await db.customer.delete({ where: { id } });
+        const supabase = getSupabaseAdmin();
+
+        const { error } = await supabase
+            .from('customers')
+            .update({ blocked: true, blockedReason: 'Excluído' })
+            .eq('id', id);
+        if (error) throw error;
+
         revalidatePath('/admin/clientes');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Falha ao bloquear cliente' };
     }
 }
 
 
 export async function generateCustomerCodesAction(user: User | null) {
     try {
-        const customersWithoutCode = await db.customer.findMany({
-            where: { OR: [{ code: null }, { code: '' }] },
-            orderBy: { createdAt: 'asc' }
-        });
+        const supabase = getSupabaseAdmin();
+
+        const { data, error } = await supabase
+            .from('customers')
+            .select('id,code,created_at')
+            .or('code.is.null,code.eq.')
+            .order('created_at', { ascending: true });
+        if (error) throw error;
 
         let updatedCount = 0;
-        // Simple sequential strategy: find last code or start from 1
-        // For robustness, simply using Timestamp or a counter in a transaction is better, 
-        // but here we iterate. To be safe, we can use a prefix.
-
-        // Let's rely on date largely for now to avoid collision or a complex seq table
-        for (const cust of customersWithoutCode) {
-            const code = `CLI-${cust.createdAt.toISOString().slice(0, 4)}-${cust.id.slice(0, 4).toUpperCase()}`;
-            await db.customer.update({
-                where: { id: cust.id },
-                data: { code }
-            });
+        for (const cust of data || []) {
+            const createdAt = cust.created_at ? new Date(cust.created_at) : new Date();
+            const code = `CLI-${createdAt.toISOString().slice(0, 4)}-${String(cust.id).slice(0, 4).toUpperCase()}`;
+            const { error: uErr } = await supabase.from('customers').update({ code }).eq('id', cust.id);
+            if (uErr) throw uErr;
             updatedCount++;
         }
 
         revalidatePath('/admin/clientes');
         return { success: true, count: updatedCount };
     } catch (error: any) {
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Falha ao gerar códigos' };
     }
 }

@@ -4,6 +4,20 @@
 import { db } from '@/lib/db';
 import { User, Product, CustomerInfo } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
+import { createClient } from '@supabase/supabase-js';
+
+const getSupabaseAdmin = () => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+        throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada no servidor.');
+    }
+    return createClient(supabaseUrl, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+    });
+};
+
+const onlyDigits = (value?: string) => String(value || '').replace(/\D/g, '');
 
 // --- Resets ---
 
@@ -129,26 +143,38 @@ export async function importProductsAction(products: Product[], user: User | nul
 
 export async function importCustomersAction(customers: CustomerInfo[], user: User | null) {
     try {
-        const customersToCreate = customers.map(c => ({
-            id: c.id || `CUST-${Math.random().toString(36).substr(2, 9)}`,
+        const supabase = getSupabaseAdmin();
+
+        const customersToUpsert = customers.map((c) => ({
+            id: c.id || onlyDigits(c.cpf) || `CUST-${Math.random().toString(36).slice(2, 11)}`,
             name: c.name,
-            code: c.code,
-            cpf: c.cpf,
-            phone: c.phone,
-            email: c.email,
-            address: c.address,
-            zip: c.zip,
-            number: c.number,
-            neighborhood: c.neighborhood,
-            city: c.city,
-            state: c.state,
-            createdAt: new Date().toISOString()
+            code: c.code || null,
+            cpf: c.cpf || null,
+            phone: c.phone || '',
+            phone2: c.phone2 || null,
+            phone3: c.phone3 || null,
+            email: c.email || null,
+            address: c.address || null,
+            zip: c.zip || null,
+            number: c.number || null,
+            complement: c.complement || null,
+            neighborhood: c.neighborhood || null,
+            city: c.city || null,
+            state: c.state || null,
+            password: c.password || null,
+            observations: c.observations || null,
+            sellerId: c.sellerId || null,
+            sellerName: c.sellerName || null,
+            blocked: !!c.blocked,
+            blockedReason: c.blockedReason || null,
+            rating: c.rating ?? null,
         }));
 
-        await db.customer.createMany({
-            data: customersToCreate,
-            skipDuplicates: true
-        });
+        const { error } = await supabase
+            .from('customers')
+            .upsert(customersToUpsert, { onConflict: 'id' });
+        if (error) throw error;
+
         revalidatePath('/admin/clientes');
         return { success: true };
     } catch (error: any) {

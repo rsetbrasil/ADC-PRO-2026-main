@@ -25,24 +25,19 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     const { logAction } = useAudit();
     const isPolling = useRef(true);
     const isFetching = useRef(false);
-    const abortRef = useRef<AbortController | null>(null);
 
     const fetchPermissions = useCallback(async () => {
         if (isFetching.current) return;
         if (document.visibilityState !== 'visible') return;
 
         isFetching.current = true;
-        abortRef.current?.abort();
-        const controller = new AbortController();
-        abortRef.current = controller;
         try {
-            const res = await fetch('/api/admin/permissions', { cache: 'no-store', signal: controller.signal });
+            const res = await fetch('/api/admin/permissions', { cache: 'no-store' });
             const result = await res.json();
             if (result?.success && result?.data) {
                 setPermissions(result.data as RolePermissions);
             }
         } catch (error) {
-            console.error("Failed to load permissions:", error);
         } finally {
             setIsLoading(false);
             isFetching.current = false;
@@ -70,7 +65,6 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
             clearInterval(intervalId);
             document.removeEventListener('visibilitychange', onVisibility);
             isPolling.current = false;
-            abortRef.current?.abort();
         };
     }, [fetchPermissions]);
 

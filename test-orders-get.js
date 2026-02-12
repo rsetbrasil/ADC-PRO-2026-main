@@ -24,6 +24,14 @@ const req = http.request(options, (res) => {
       console.log('SOURCE', json?.source);
       console.log('RECENT_META', json?.recentMeta);
       console.log('FIRST', first?.id, first?.date);
+      const itemsCount = Array.isArray(first?.items) ? first.items.length : 0;
+      const nextPending = Array.isArray(first?.installmentDetails)
+        ? first.installmentDetails
+          .filter((i) => i?.status === 'Pendente')
+          .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0]
+        : null;
+      console.log('FIRST_ITEMS', itemsCount);
+      console.log('FIRST_NEXT_DUE', nextPending?.dueDate || null);
       console.log(body.slice(0, 300));
     } catch {
       console.log(body.slice(0, 300));

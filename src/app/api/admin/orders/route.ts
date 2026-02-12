@@ -120,7 +120,7 @@ export async function GET(req: Request) {
 
     const selectList = includeItems
       ? 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,observations,source,created_at,updated_at'
-      : 'id,customer,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,sellerId,sellerName,source,created_at,updated_at';
+      : 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,source,created_at,updated_at';
 
     const work = (async () => {
       const ordered = cursor
