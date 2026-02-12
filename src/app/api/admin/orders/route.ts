@@ -144,8 +144,8 @@ export async function GET(req: Request) {
        }
 
       if (isFetchAll) {
-        let allData = [];
-        let lastId = null;
+        let allData: any[] = [];
+        let lastId: string | null = null;
         let hasMore = true;
         
         while (hasMore) {
