@@ -24,6 +24,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [productsLoading, setProductsLoading] = useState(true);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const isPolling = useRef(true);
+  const isFetching = useRef(false);
 
   // Funções de atualização otimista (sem cache)
   const updateProductLocally = (product: Product) => {
@@ -46,6 +47,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const fetchData = async (showLoading = false) => {
+      if (isFetching.current) return;
+      isFetching.current = true;
       if (showLoading) {
         setProductsLoading(true);
         setCategoriesLoading(true);
@@ -53,10 +56,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       // Fetch Products
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch('/api/public/products', { cache: 'no-store', signal: controller.signal });
-        clearTimeout(timeout);
+        const res = await fetch('/api/public/products', { cache: 'no-store' });
         if (res.ok) {
           const result = await res.json();
           if (result?.success && Array.isArray(result.data)) {
@@ -71,10 +71,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       // Fetch Categories
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch('/api/public/categories', { cache: 'no-store', signal: controller.signal });
-        clearTimeout(timeout);
+        const res = await fetch('/api/public/categories', { cache: 'no-store' });
         if (res.ok) {
           const result = await res.json();
           if (result?.success && Array.isArray(result.data)) {
@@ -85,21 +82,29 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         // silent
       } finally {
         if (showLoading) setCategoriesLoading(false);
+        isFetching.current = false;
       }
     };
 
     fetchData(true);
+
+    const onVisibility = () => {
+      isPolling.current = document.visibilityState === 'visible';
+      if (isPolling.current) fetchData(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     // Polling interval (Replace Realtime)
     const intervalId = setInterval(() => {
       if (isPolling.current) {
         fetchData(false);
       }
-    }, 10000); // 10s polling
+    }, 30000);
 
     return () => {
       clearInterval(intervalId);
       isPolling.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

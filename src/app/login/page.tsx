@@ -19,9 +19,16 @@ export default function LoginPage() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [health, setHealth] = useState<{ ok: boolean; ms?: number } | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    fetch('/api/health/supabase', { cache: 'no-store' })
+      .then(async (r) => {
+        const j = await r.json();
+        setHealth({ ok: !!j?.ok, ms: j?.ms });
+      })
+      .catch(() => setHealth({ ok: false }));
   }, []);
 
   const handleLogin = (e: FormEvent) => {
@@ -47,6 +54,9 @@ export default function LoginPage() {
           <Shield className="mx-auto h-12 w-12 text-primary mb-4" />
           <CardTitle className="text-2xl">Acesso Restrito</CardTitle>
           <CardDescription>Faça login para acessar o painel administrativo.</CardDescription>
+          {health && !health.ok && (
+            <p className="mt-2 text-xs text-destructive">Aviso: conexão com Supabase instável. Login usa dados locais.</p>
+          )}
         </CardHeader>
         <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">

@@ -118,7 +118,7 @@ const months = [
 
 export default function OrdersAdminPage() {
     const { updateOrderStatus, recordInstallmentPayment, updateOrderDetails, updateInstallmentDueDate, deleteOrder, permanentlyDeleteOrder, reversePayment, emptyTrash, updateInstallmentAmount } = useAdmin();
-    const { orders, customers } = useAdminData();
+    const { orders, customers, loadMoreOrders, hasMoreOrders, isLoadingMoreOrders } = useAdminData();
     const { products } = useData();
     const { user, users } = useAuth();
     const { settings } = useSettings();
@@ -336,10 +336,27 @@ export default function OrdersAdminPage() {
         }
     }, [orders, selectedOrder]);
 
-    const handleOpenDetails = (order: Order) => {
+    const fetchOrderDetails = async (orderId: string) => {
+        try {
+            const res = await fetch(`/api/admin/orders?id=${encodeURIComponent(orderId)}`, { cache: 'no-store' }).then((r) => r.json());
+            if (res?.success && res?.data) return res.data as Order;
+        } catch {
+        }
+        return null;
+    };
+
+    const handleOpenDetails = async (order: Order) => {
         markAsViewed(order.id);
-        setSelectedOrder(order);
         setEditedInstallmentValues({});
+        if (!order.items || order.items.length === 0) {
+            const full = await fetchOrderDetails(order.id);
+            if (full) {
+                setSelectedOrder(full);
+                setIsDetailModalOpen(true);
+                return;
+            }
+        }
+        setSelectedOrder(order);
         setIsDetailModalOpen(true);
     }
 
@@ -409,12 +426,14 @@ export default function OrdersAdminPage() {
         emptyTrash(logAction, user);
     }
 
-    const handleSendWhatsAppReminder = (order: Order, installment: Installment) => {
+    const handleSendWhatsAppReminder = async (order: Order, installment: Installment) => {
+        const full = !order.items || order.items.length === 0 ? await fetchOrderDetails(order.id) : order;
+        if (!full) return;
         const customerName = order.customer.name.split(' ')[0];
         const customerPhone = order.customer.phone.replace(/\D/g, '');
         const dueDate = format(parseISO(installment.dueDate), 'dd/MM/yyyy', { locale: ptBR });
         const amount = formatCurrency(installment.amount - (installment.paidAmount || 0));
-        const productNames = order.items.map(item => item.name).join(', ');
+        const productNames = full.items.map(item => item.name).join(', ');
 
         const message = `Olá, ${customerName}! Passando para lembrar sobre a sua parcela do carnê (pedido ${order.id}) referente a compra de *${productNames}*.
 
@@ -755,6 +774,13 @@ Não esqueça de enviar o comprovante!`;
                                                 </span>
                                                 <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.min(totalActivePages, p + 1))} disabled={activePage === totalActivePages}>
                                                     Próxima
+                                                </Button>
+                                            </div>
+                                        )}
+                                        {(hasMoreOrders || isLoadingMoreOrders) && (
+                                            <div className="flex justify-center mt-4">
+                                                <Button variant="outline" onClick={loadMoreOrders} disabled={!hasMoreOrders || isLoadingMoreOrders}>
+                                                    {isLoadingMoreOrders ? 'Carregando...' : 'Carregar mais pedidos'}
                                                 </Button>
                                             </div>
                                         )}

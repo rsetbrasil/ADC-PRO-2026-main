@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import { mapDbOrderToOrder, mapOrderPatchToDb } from '@/lib/supabase-mappers';
 
 let cachedOrdersColumnStyle: 'camel' | 'snake' | null = null;
+let cachedAdminOrders: { at: number; data: Order[] } | null = null;
+const ADMIN_ORDERS_CACHE_TTL_MS = 10000;
 
 async function getOrdersExistingColumns(supabase: any): Promise<Set<string> | null> {
     try {
@@ -79,6 +81,11 @@ async function detectOrdersColumnStyle(supabase: any): Promise<'camel' | 'snake'
 // Fetch all orders
 export async function getAdminOrdersAction() {
     try {
+        const now = Date.now();
+        if (cachedAdminOrders && now - cachedAdminOrders.at < ADMIN_ORDERS_CACHE_TTL_MS) {
+            return { success: true, data: cachedAdminOrders.data };
+        }
+
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
@@ -92,19 +99,41 @@ export async function getAdminOrdersAction() {
             return (data || []).map(mapDbOrderToOrder);
         };
 
+        const fallbackFast = async () => {
+            const { data, error } = await supabase.from('orders').select('*').order('id', { ascending: false }).limit(200);
+            if (error) throw error;
+            return (data || []).map(mapDbOrderToOrder);
+        };
+
         try {
             const orders = await attempt(style === 'snake' ? 'created_at' : 'createdAt');
+            cachedAdminOrders = { at: now, data: orders };
             return { success: true, data: orders };
         } catch {
             try {
                 const orders = await attempt(style === 'snake' ? 'date' : 'date');
+                cachedAdminOrders = { at: now, data: orders };
                 return { success: true, data: orders };
             } catch {
-                const orders = await attempt('date');
-                return { success: true, data: orders };
+                try {
+                    const orders = await attempt('date');
+                    cachedAdminOrders = { at: now, data: orders };
+                    return { success: true, data: orders };
+                } catch (e: any) {
+                    const msg = String(e?.message || '');
+                    if (msg.toLowerCase().includes('statement timeout')) {
+                        const orders = await fallbackFast();
+                        cachedAdminOrders = { at: now, data: orders };
+                        return { success: true, data: orders };
+                    }
+                    throw e;
+                }
             }
         }
     } catch (error: any) {
+        if (cachedAdminOrders) {
+            return { success: true, data: cachedAdminOrders.data };
+        }
         return { success: false, error: error?.message || 'Falha ao buscar pedidos' };
     }
 }
@@ -196,6 +225,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
                 const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
                 if (error) throw error;
 
+                cachedAdminOrders = null;
                 revalidatePath('/admin/pedidos');
                 return { success: true };
             }
@@ -206,6 +236,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
         const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
         if (error) throw error;
 
+        cachedAdminOrders = null;
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -224,6 +255,7 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
             
             if (fallbackError) throw fallbackError;
             
+            cachedAdminOrders = null;
             revalidatePath('/admin/pedidos');
             return { success: true };
         } catch (finalError: any) {
@@ -242,6 +274,8 @@ export async function moveOrderToTrashAction(orderId: string) {
             .update({ status: 'Excluído' })
             .eq('id', orderId);
         if (error) throw error;
+
+        cachedAdminOrders = null;
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -259,6 +293,8 @@ export async function permanentlyDeleteOrderAction(orderId: string) {
             .delete()
             .eq('id', orderId);
         if (error) throw error;
+
+        cachedAdminOrders = null;
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -302,6 +338,7 @@ export async function recordInstallmentPaymentAction(orderId: string, installmen
             .eq('id', orderId);
         if (error) throw error;
 
+        cachedAdminOrders = null;
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
@@ -324,6 +361,8 @@ export async function updateOrderDetailsAction(orderId: string, data: Partial<Or
             .update(payload)
             .eq('id', orderId);
         if (error) throw error;
+
+        cachedAdminOrders = null;
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {

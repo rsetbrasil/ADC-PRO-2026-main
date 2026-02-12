@@ -1,9 +1,17 @@
 {
-  "/api/public/products/route": "app/api/public/products/route.js",
+  "/api/auth/users/route": "app/api/auth/users/route.js",
   "/api/audit/logs/route": "app/api/audit/logs/route.js",
+  "/api/public/products/route": "app/api/public/products/route.js",
   "/api/public/categories/route": "app/api/public/categories/route.js",
-  "/api/audit/log/route": "app/api/audit/log/route.js",
+  "/api/admin/orders/route": "app/api/admin/orders/route.js",
+  "/api/admin/stock-audits/route": "app/api/admin/stock-audits/route.js",
+  "/api/admin/customers/route": "app/api/admin/customers/route.js",
+  "/api/admin/commission-payments/route": "app/api/admin/commission-payments/route.js",
+  "/api/admin/avarias/route": "app/api/admin/avarias/route.js",
+  "/api/admin/permissions/route": "app/api/admin/permissions/route.js",
+  "/(public)/page": "app/(public)/page.js",
   "/admin/pedidos/page": "app/admin/pedidos/page.js",
   "/login/page": "app/login/page.js",
-  "/admin/page": "app/admin/page.js"
+  "/admin/page": "app/admin/page.js",
+  "/admin/configuracao/page": "app/admin/configuracao/page.js"
 }

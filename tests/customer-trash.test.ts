@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { InMemoryCustomerTrashStore } from '../src/lib/customer-trash';
 
 const baseCustomer = {
+  id: 'customer-1',
   name: 'Fulano de Tal',
   cpf: '123.456.789-09',
   phone: '(85) 99999-9999',
@@ -41,4 +42,3 @@ test('Restauração devolve o registro para a tabela principal', () => {
   assert.equal(store.hasInMain(baseCustomer.cpf), true);
   assert.equal(store.hasInTrash(baseCustomer.cpf), false);
 });
-

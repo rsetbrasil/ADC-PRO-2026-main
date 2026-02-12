@@ -16,13 +16,13 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const isPolling = useRef(true);
+  const isFetching = useRef(false);
 
   const fetchLogs = useCallback(async () => {
+    if (isFetching.current) return;
+    isFetching.current = true;
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch('/api/audit/logs', { cache: 'no-store', signal: controller.signal });
-      clearTimeout(timeout);
+      const res = await fetch('/api/audit/logs', { cache: 'no-store' });
       if (res.ok) {
         const result = await res.json();
         if (result?.success && Array.isArray(result.data)) {
@@ -33,19 +33,27 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
       // silent
     } finally {
       setIsLoading(false);
+      isFetching.current = false;
     }
   }, []);
 
   useEffect(() => {
     fetchLogs();
 
+    const onVisibility = () => {
+      isPolling.current = document.visibilityState === 'visible';
+      if (isPolling.current) fetchLogs();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     const intervalId = setInterval(() => {
       if (isPolling.current) fetchLogs();
-    }, 15000);
+    }, 60000);
 
     return () => {
       clearInterval(intervalId);
       isPolling.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [fetchLogs]);
 
@@ -54,15 +62,11 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return;
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
       await fetch('/api/audit/log', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action, details, user }),
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
     } catch (error) {
       // silent
     }

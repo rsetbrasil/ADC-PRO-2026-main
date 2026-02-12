@@ -4,7 +4,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import type { RolePermissions } from '@/lib/types';
 import { initialPermissions } from '@/lib/permissions';
-import { getRolePermissionsAction, updateRolePermissionsAction } from '@/app/actions/permissions';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './AuthContext';
 import { useAudit } from './AuditContext';
@@ -25,41 +24,65 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     const { user } = useAuth();
     const { logAction } = useAudit();
     const isPolling = useRef(true);
+    const isFetching = useRef(false);
+    const abortRef = useRef<AbortController | null>(null);
 
     const fetchPermissions = useCallback(async () => {
+        if (isFetching.current) return;
+        if (document.visibilityState !== 'visible') return;
+
+        isFetching.current = true;
+        abortRef.current?.abort();
+        const controller = new AbortController();
+        abortRef.current = controller;
         try {
-            const result = await getRolePermissionsAction();
-            if (result.success && result.data) {
-                setPermissions(result.data);
+            const res = await fetch('/api/admin/permissions', { cache: 'no-store', signal: controller.signal });
+            const result = await res.json();
+            if (result?.success && result?.data) {
+                setPermissions(result.data as RolePermissions);
             }
         } catch (error) {
             console.error("Failed to load permissions:", error);
         } finally {
             setIsLoading(false);
+            isFetching.current = false;
         }
     }, []);
 
     useEffect(() => {
-        fetchPermissions();
+        const tick = () => {
+            if (!isPolling.current) return;
+            fetchPermissions();
+        };
 
-        // Polling to replace Realtime
+        tick();
+
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') tick();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
         const intervalId = setInterval(() => {
-            if (isPolling.current) {
-                fetchPermissions();
-            }
-        }, 15000); // 15s polling for config
+            if (document.visibilityState === 'visible') tick();
+        }, 30000);
 
         return () => {
             clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', onVisibility);
             isPolling.current = false;
+            abortRef.current?.abort();
         };
     }, [fetchPermissions]);
 
     const updatePermissions = useCallback(async (newPermissions: RolePermissions) => {
         try {
-            const result = await updateRolePermissionsAction(newPermissions);
-
-            if (!result.success) throw new Error(result.error);
+            const res = await fetch('/api/admin/permissions', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ permissions: newPermissions }),
+            });
+            const result = await res.json();
+            if (!result?.success) throw new Error(result?.error);
 
             setPermissions(newPermissions); // Optimistic update
 
@@ -92,4 +115,3 @@ export const usePermissions = () => {
     }
     return context;
 };
-

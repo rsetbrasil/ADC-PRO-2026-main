@@ -1,6 +1,5 @@
 'use server';
 
-import { db } from '@/lib/db';
 import { RolePermissions } from '@/lib/types';
 import { initialPermissions } from '@/lib/permissions';
 import { createClient } from '@supabase/supabase-js';
@@ -49,6 +48,7 @@ export async function updateRolePermissionsAction(permissions: RolePermissions) 
         return { success: true };
     } catch {
         try {
+            const { db } = await import('@/lib/db');
             await db.config.upsert({
                 where: { key: 'rolePermissions' },
                 update: { value: permissions as any },

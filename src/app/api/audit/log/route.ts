@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { User } from '@/lib/types';
 import { createClient } from '@supabase/supabase-js';
+import { randomUUID } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,10 +21,11 @@ export async function POST(req: Request) {
     }
 
     const newLog = {
+      id: randomUUID(),
       timestamp: new Date().toISOString(),
-      user_id: user.id,
-      user_name: user.name,
-      user_role: user.role,
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
       action,
       details,
     };

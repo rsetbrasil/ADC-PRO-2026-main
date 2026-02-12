@@ -14,12 +14,12 @@ import { calculateOrderCommission } from '@/lib/commission';
 // Server Actions
 import { getAdminOrdersAction, updateOrderStatusAction, moveOrderToTrashAction, permanentlyDeleteOrderAction, recordInstallmentPaymentAction, updateOrderDetailsAction } from '@/app/actions/admin/orders';
 import { addProductAction, updateProductAction, deleteProductAction } from '@/app/actions/admin/products';
-import { saveStockAuditAction, getStockAuditsAction, addAvariaAction, updateAvariaAction, deleteAvariaAction, getAvariasAction } from '@/app/actions/admin/inventory';
+import { saveStockAuditAction, addAvariaAction, updateAvariaAction, deleteAvariaAction } from '@/app/actions/admin/inventory';
 import { createOrderAction } from '@/app/actions/checkout';
 import { getProductsAction } from '@/app/actions/data';
 import { resetOrdersAction, resetProductsAction, resetFinancialsAction, resetAllAdminDataAction, importProductsAction, importCustomersAction, emptyTrashAction, restoreProductAction, permanentlyDeleteProductWithIdAction, fetchDeletedProductsAction } from '@/app/actions/admin/system';
-import { addCustomerAction, getCustomersAction, updateCustomerAction, deleteCustomerAction, generateCustomerCodesAction } from '@/app/actions/admin/customers';
-import { getCommissionPaymentsAction, payCommissionAction, reverseCommissionPaymentAction } from '@/app/actions/admin/financials';
+import { addCustomerAction, updateCustomerAction, deleteCustomerAction, generateCustomerCodesAction } from '@/app/actions/admin/customers';
+import { payCommissionAction, reverseCommissionPaymentAction } from '@/app/actions/admin/financials';
 import { addCategoryAction, deleteCategoryAction, updateCategoryNameAction, addSubcategoryAction, updateSubcategoryAction, deleteSubcategoryAction } from '@/app/actions/admin/categories';
 
 type LogAction = (action: string, details: string, user: User | null) => void;
@@ -69,6 +69,9 @@ interface AdminContextType {
   restoreProduct: (product: Product, logAction: LogAction, user: User | null) => Promise<void>;
   permanentlyDeleteProduct: (productId: string, logAction: LogAction, user: User | null) => Promise<void>;
   fetchDeletedProducts: () => Promise<Product[]>;
+  loadMoreOrders: () => Promise<void>;
+  hasMoreOrders: boolean;
+  isLoadingMoreOrders: boolean;
   orders: Order[];
   commissionPayments: CommissionPayment[];
   stockAudits: StockAudit[];
@@ -114,9 +117,13 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const { products: productsData, categories, updateProductLocally, addProductLocally, deleteProductLocally } = useData();
   const { toast } = useToast();
   const { user, users } = useAuth();
+  const isFetching = useRef(false);
 
   // Use local state for orders, etc.
   const [orders, setOrders] = useState<Order[]>([]);
+  const [ordersNextCursor, setOrdersNextCursor] = useState<string | null>(null);
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
+  const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
   const [customers, setCustomers] = useState<CustomerInfo[]>([]);
   const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
   const [stockAudits, setStockAudits] = useState<StockAudit[]>([]);
@@ -126,41 +133,88 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   // Polling Function
   const fetchData = useCallback(async () => {
-    // Orders
-    const ordersRes = await getAdminOrdersAction();
-    if (ordersRes.success && ordersRes.data) {
-      setOrders(ordersRes.data);
-    }
+    if (!user) return;
 
-    // Customers
-    const customersRes = await getCustomersAction();
-    if (customersRes.success && customersRes.data) {
-      setCustomers(customersRes.data);
-    }
+    const [ordersRes, customersRes, commRes, auditRes, avariaRes] = await Promise.allSettled([
+      fetch('/api/admin/orders?limit=60&includeItems=0', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/admin/customers', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/admin/commission-payments', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/admin/stock-audits', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/admin/avarias', { cache: 'no-store' }).then((r) => r.json()),
+    ]);
 
-    // Commission Payments
-    const commRes = await getCommissionPaymentsAction();
-    if (commRes.success && commRes.data) {
-      setCommissionPayments(commRes.data);
+    if (ordersRes.status === 'fulfilled' && ordersRes.value.success && ordersRes.value.data) {
+      setOrders(ordersRes.value.data);
+      setOrdersNextCursor(ordersRes.value.nextCursor || null);
+      setHasMoreOrders(!!ordersRes.value.nextCursor);
     }
+    if (customersRes.status === 'fulfilled' && customersRes.value.success && customersRes.value.data) {
+      setCustomers(customersRes.value.data);
+    }
+    if (commRes.status === 'fulfilled' && commRes.value.success && commRes.value.data) {
+      setCommissionPayments(commRes.value.data);
+    }
+    if (auditRes.status === 'fulfilled' && auditRes.value.success && auditRes.value.data) {
+      setStockAudits(auditRes.value.data);
+    }
+    if (avariaRes.status === 'fulfilled' && avariaRes.value.success && avariaRes.value.data) {
+      setAvarias(avariaRes.value.data);
+    }
+  }, [user]);
 
-    // Stock Audits
-    const auditRes = await getStockAuditsAction();
-    if (auditRes.success && auditRes.data) {
-      setStockAudits(auditRes.data);
-    }
+  const loadMoreOrders = useCallback(async () => {
+    if (!user) return;
+    if (!hasMoreOrders) return;
+    if (!ordersNextCursor) return;
+    if (isLoadingMoreOrders) return;
 
-    // Avarias
-    const avariaRes = await getAvariasAction();
-    if (avariaRes.success && avariaRes.data) {
-      setAvarias(avariaRes.data);
+    setIsLoadingMoreOrders(true);
+    try {
+      const res = await fetch(`/api/admin/orders?limit=60&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
+      if (!res?.success || !res?.data) return;
+
+      const next = res.nextCursor || null;
+      setOrdersNextCursor(next);
+      setHasMoreOrders(!!next);
+
+      setOrders((prev) => {
+        const seen = new Set(prev.map((o) => o.id));
+        const merged = [...prev];
+        for (const o of res.data as Order[]) {
+          if (!seen.has(o.id)) merged.push(o);
+        }
+        return merged;
+      });
+    } finally {
+      setIsLoadingMoreOrders(false);
     }
-  }, []);
+  }, [user, hasMoreOrders, ordersNextCursor, isLoadingMoreOrders]);
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000); // 10 seconds polling
-    return () => clearInterval(interval);
+    const tick = async () => {
+      if (isFetching.current) return;
+      isFetching.current = true;
+      try {
+        await fetchData();
+      } finally {
+        isFetching.current = false;
+      }
+    };
+
+    tick();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') tick();
+    }, 30000);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchData]);
 
   const addOrder = async (order: Partial<Order> & { firstDueDate: Date }, logAction: LogAction, user: User | null): Promise<Order | null> => {
@@ -569,6 +623,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     saveStockAudit, addAvaria, updateAvaria, deleteAvaria,
     emptyTrash,
     restoreProduct, permanentlyDeleteProduct, fetchDeletedProducts,
+    loadMoreOrders, hasMoreOrders, isLoadingMoreOrders,
     orders, commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
   };
 

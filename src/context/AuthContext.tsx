@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useRe
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import type { User } from '@/lib/types';
-import { getUsersAction, createUserAction, updateUserAction, deleteUserAction, restoreUsersAction } from '@/app/actions/auth';
+import { createUserAction, updateUserAction, deleteUserAction, restoreUsersAction } from '@/app/actions/auth';
 import { useAudit } from './AuditContext';
 
 const initialUsers: User[] = [
@@ -40,26 +40,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Ref to track if we should polling
   const isPolling = useRef(true);
+  const isFetching = useRef(false);
 
   // Function to fetch users centralizing logic
   const fetchUsers = async (showLoading = false) => {
+    if (isFetching.current) return;
+    isFetching.current = true;
     if (showLoading) setIsLoading(true);
     try {
-      const result = await getUsersAction();
+      const result = await fetch('/api/auth/users', { cache: 'no-store' }).then((r) => r.json());
+      const dataUsers = (result?.data || []) as User[];
 
-      if (!result.success || !result.data) {
-        console.error('Error fetching users:', result.error);
-        return;
+      if (!result.success || !dataUsers || (Array.isArray(dataUsers) && dataUsers.length === 0)) {
+        setUsers(initialUsers);
+      } else {
+        setUsers(dataUsers);
       }
-
-      setUsers(result.data);
 
       // Validate session against DB data
       try {
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
           const parsedUser = JSON.parse(storedUser) as User;
-          const validUser = result.data.find(u => u.id === parsedUser.id);
+          const validUser = dataUsers.find((u: User) => u.id === parsedUser.id);
 
           if (validUser) {
             // Update session with fresh data
@@ -81,12 +84,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         }
       } catch (error) {
-        console.error("Failed to validate session:", error);
         localStorage.removeItem('user');
         setUser(null);
       }
     } finally {
       if (showLoading) setIsLoading(false);
+      isFetching.current = false;
     }
   };
 
@@ -94,16 +97,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Initial fetch
     fetchUsers(true);
 
+    const onVisibility = () => {
+      isPolling.current = document.visibilityState === 'visible';
+      if (isPolling.current) fetchUsers(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     // Polling interval (Replace Realtime)
     const intervalId = setInterval(() => {
       if (isPolling.current) {
         fetchUsers(false);
       }
-    }, 5000); // Poll every 5 seconds
+    }, 60000);
 
     return () => {
       clearInterval(intervalId);
       isPolling.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, []);
 

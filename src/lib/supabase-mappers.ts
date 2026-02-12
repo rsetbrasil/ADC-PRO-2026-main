@@ -3,11 +3,13 @@ import type { Order } from '@/lib/types';
 export function mapDbOrderToOrder(row: any): Order {
   const firstDueRaw = row.first_due_date ?? row.firstDueDate;
   const firstDueDate = firstDueRaw ? new Date(firstDueRaw) : undefined;
+  const itemsRaw = row.items;
+  const items = Array.isArray(itemsRaw) ? itemsRaw : [];
 
   return {
     id: row.id,
     customer: row.customer,
-    items: row.items,
+    items,
     total: row.total,
     subtotal: row.subtotal ?? undefined,
     discount: row.discount ?? undefined,

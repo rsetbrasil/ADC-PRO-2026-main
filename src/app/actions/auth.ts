@@ -23,13 +23,8 @@ export async function getUsersAction() {
             canBeAssigned: u.can_be_assigned ?? true,
         }));
         return { success: true, data: mapped };
-    } catch {
-        try {
-            const allUsers = await db.user.findMany();
-            return { success: true, data: allUsers as unknown as User[] };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: true, data: [] };
     }
 }
 
@@ -191,5 +186,27 @@ export async function restoreUsersAction(usersToRestore: User[]) {
         } catch (e: any) {
             return { success: false, error: e?.message || error?.message };
         }
+    }
+}
+
+export async function seedDefaultUsersAction(usersToSeed: User[]) {
+    try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const payload = (usersToSeed || []).map((u) => ({
+            id: u.id,
+            username: u.username,
+            password: u.password || '',
+            name: u.name,
+            role: u.role,
+            can_be_assigned: u.canBeAssigned ?? true,
+        }));
+        const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
+        if (error) throw error;
+        revalidatePath('/admin/usuarios');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao semear usuários' };
     }
 }

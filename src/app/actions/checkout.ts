@@ -35,10 +35,10 @@ export async function findCustomerByCpfAction(cpf: string) {
                 state: customer.state || '',
                 password: customer.password || undefined,
                 observations: customer.observations || undefined,
-                sellerId: customer.sellerId || undefined,
-                sellerName: customer.sellerName || undefined,
+                sellerId: customer.seller_id ?? customer.sellerId ?? undefined,
+                sellerName: customer.seller_name ?? customer.sellerName ?? undefined,
                 blocked: !!customer.blocked,
-                blockedReason: customer.blockedReason || undefined,
+                blockedReason: customer.blocked_reason ?? customer.blockedReason ?? undefined,
                 rating: customer.rating ?? undefined,
             };
             return { success: true, data: mapped, source: 'active' };
@@ -123,6 +123,7 @@ export async function createOrderAction(orderData: any, customerData: any): Prom
             rating: customerData.rating ?? null,
             createdBy: customerData.createdBy ?? null,
             createdByName: customerData.createdByName ?? null,
+            updated_at: new Date().toISOString(),
         };
 
         const { error: cError } = await supabase
@@ -179,6 +180,7 @@ export async function createOrderAction(orderData: any, customerData: any): Prom
             createdByRole: orderData.createdByRole ?? null,
             createdIp: orderData.createdIp ?? null,
             asaas: orderData.asaas ?? null,
+            updated_at: new Date().toISOString(),
         };
 
         const { error: oError } = await supabase.from('orders').insert(orderRow);
