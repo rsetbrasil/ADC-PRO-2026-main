@@ -232,9 +232,21 @@ export default function OrdersAdminPage() {
                 }
             })();
 
-            const isOverdue = (o.installmentDetails || []).some(inst => inst.status === 'Pendente' && new Date(inst.dueDate) < new Date());
-            const hasPendingInstallments = (o.installmentDetails || []).some(inst => inst.status === 'Pendente');
-            const isPaidOff = (o.installmentDetails || []).length > 0 && (o.installmentDetails || []).every(inst => inst.status === 'Pago');
+            const isOverdue = o.paymentMethod === 'Crediário' && (o.installmentDetails || []).some(inst => inst.status === 'Pendente' && new Date(inst.dueDate) < new Date());
+            const hasPendingInstallments = o.paymentMethod === 'Crediário' && (o.installmentDetails || []).some(inst => inst.status === 'Pendente');
+            
+            const isPaidOff = (() => {
+                if (o.paymentMethod === 'Dinheiro') return true;
+                if (o.paymentMethod === 'Pix') {
+                    const isLegacyPix = !o.asaas?.paymentId;
+                    const isPaid = isLegacyPix || !!o.asaas?.paidAt;
+                    return isPaid;
+                }
+                if (o.paymentMethod === 'Crediário') {
+                    return (o.installmentDetails || []).length > 0 && (o.installmentDetails || []).every(inst => inst.status === 'Pago');
+                }
+                return false;
+            })();
 
             const overdueMatch = !filters.showOverdue || isOverdue;
             const onTimeMatch = !filters.showOnTime || (!isOverdue && (hasPendingInstallments || isPaidOff));
@@ -510,6 +522,7 @@ Não esqueça de enviar o comprovante!`;
 
     const overdueOrdersForReport = useMemo(() => {
         return activeOrders.map(order => {
+            if (order.paymentMethod !== 'Crediário') return null;
             const overdueInstallment = (order.installmentDetails || []).find(inst => inst.status === 'Pendente' && new Date(inst.dueDate) < new Date());
             return overdueInstallment ? { order, overdueInstallment } : null;
         }).filter(item => item !== null) as { order: Order; overdueInstallment: Installment }[];
@@ -690,8 +703,19 @@ Não esqueça de enviar o comprovante!`;
                                                             ?.filter(inst => inst.status === 'Pendente')
                                                             .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
                                                         const installmentForReminder = nextPendingInstallment || order.installmentDetails?.[0];
-                                                        const isOverdue = !!nextPendingInstallment && new Date(nextPendingInstallment.dueDate) < new Date();
-                                                        const isPaidOff = (order.installmentDetails || []).length > 0 && (order.installmentDetails || []).every(inst => inst.status === 'Pago');
+                                                        const isOverdue = order.paymentMethod === 'Crediário' && !!nextPendingInstallment && new Date(nextPendingInstallment.dueDate) < new Date();
+                                                        const isPaidOff = (() => {
+                                                            if (order.paymentMethod === 'Dinheiro') return true;
+                                                            if (order.paymentMethod === 'Pix') {
+                                                                const isLegacyPix = !order.asaas?.paymentId;
+                                                                const isPaid = isLegacyPix || !!order.asaas?.paidAt;
+                                                                return isPaid;
+                                                            }
+                                                            if (order.paymentMethod === 'Crediário') {
+                                                                return (order.installmentDetails || []).length > 0 && (order.installmentDetails || []).every(inst => inst.status === 'Pago');
+                                                            }
+                                                            return false;
+                                                        })();
 
                                                         return (
                                                             <TableRow key={order.id} className="text-sm">
