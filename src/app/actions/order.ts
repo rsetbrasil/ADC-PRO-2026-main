@@ -7,9 +7,9 @@ import { mapDbOrderToOrder } from '@/lib/supabase-mappers';
 export async function getOrderByIdAction(orderId: string) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!supabaseUrl || !serviceRoleKey) {
-      throw new Error('SUPABASE_SERVICE_ROLE_KEY não configurada no servidor.');
+      throw new Error('Supabase env ausente (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)');
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {

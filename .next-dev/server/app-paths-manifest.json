@@ -9,9 +9,10 @@
   "/api/auth/users/route": "app/api/auth/users/route.js",
   "/api/audit/logs/route": "app/api/audit/logs/route.js",
   "/api/public/categories/route": "app/api/public/categories/route.js",
+  "/api/audit/log/route": "app/api/audit/log/route.js",
   "/checkout/page": "app/checkout/page.js",
   "/order-confirmation/[id]/page": "app/order-confirmation/[id]/page.js",
+  "/(public)/page": "app/(public)/page.js",
   "/admin/pedidos/page": "app/admin/pedidos/page.js",
-  "/admin/clientes/page": "app/admin/clientes/page.js",
-  "/(public)/page": "app/(public)/page.js"
+  "/admin/clientes/page": "app/admin/clientes/page.js"
 }
