@@ -10,15 +10,24 @@ function percentile(values, p) {
 
 function requestOnce(url, agent) {
   return new Promise((resolve) => {
-    const started = Date.now();
+    let started = Date.now();
     const lib = url.startsWith('https:') ? https : http;
     const req = lib.request(url, { method: 'GET', agent }, (res) => {
       res.resume();
       res.on('end', () => {
-        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, ms: Date.now() - started, status: res.statusCode });
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          ms: Date.now() - started,
+          status: res.statusCode,
+          cache: res.headers['x-cache'] || null,
+          responseMs: res.headers['x-response-ms'] || null,
+        });
       });
     });
-    req.setTimeout(10000, () => {
+    req.on('socket', () => {
+      started = Date.now();
+    });
+    req.setTimeout(30000, () => {
       req.destroy();
       resolve({ ok: false, ms: Date.now() - started, status: 0, timeout: true });
     });
@@ -32,10 +41,13 @@ function requestOnce(url, agent) {
 async function main() {
   const url = process.argv[2] || 'http://localhost:3100/api/admin/orders?limit=200';
   const total = Number(process.argv[3] || '1000');
+  const maxSockets = Number(process.argv[4] || String(Math.min(total, 200)));
 
   const agent = url.startsWith('https:')
-    ? new https.Agent({ keepAlive: true, maxSockets: total })
-    : new http.Agent({ keepAlive: true, maxSockets: total });
+    ? new https.Agent({ keepAlive: true, maxSockets })
+    : new http.Agent({ keepAlive: true, maxSockets });
+
+  const warmup = await requestOnce(url, agent);
 
   const startedAll = Date.now();
   const results = await Promise.all(Array.from({ length: total }, () => requestOnce(url, agent)));
@@ -51,10 +63,20 @@ async function main() {
   const slow3s = results.filter((r) => r.ms > 3000).length;
   const slow5s = results.filter((r) => r.ms > 5000).length;
   const timeouts = results.filter((r) => r.timeout).length;
+  const cacheCounts = results.reduce((acc, r) => {
+    const k = r.cache || 'NONE';
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
 
   console.log(JSON.stringify({
     url,
     total,
+    maxSockets,
+    warmupMs: warmup.ms,
+    warmupOk: warmup.ok,
+    warmupStatus: warmup.status,
+    warmupCache: warmup.cache || null,
     totalMs,
     ok: okCount,
     errors: total - okCount,
@@ -65,6 +87,7 @@ async function main() {
     slowOver3s: slow3s,
     slowOver5s: slow5s,
     timeouts,
+    cacheCounts,
   }, null, 2));
 }
 

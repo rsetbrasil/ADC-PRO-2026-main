@@ -675,7 +675,7 @@ Não esqueça de enviar o comprovante!`;
                                                                         })()}
                                                                     </div>
                                                                 </TableCell>
-                                                                <TableCell className="p-2 text-xs truncate max-w-[150px]">{order.items.map(item => item.name).join(', ')}</TableCell>
+                                                                <TableCell className="p-2 text-xs truncate max-w-[150px]">{order.items.length ? order.items.map(item => item.name).join(', ') : '—'}</TableCell>
                                                                 <TableCell className="p-2 truncate max-w-[120px]">{order.sellerName}</TableCell>
                                                                 <TableCell className={cn("p-2 whitespace-nowrap", isOverdue && "text-destructive font-semibold", isPaidOff && !nextPendingInstallment && "text-green-600 font-semibold")}>
                                                                     {nextPendingInstallment ? format(new Date(nextPendingInstallment.dueDate), 'dd/MM/yy') : (isPaidOff ? 'Quitado' : '-')}

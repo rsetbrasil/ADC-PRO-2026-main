@@ -7,12 +7,22 @@ export const dynamic = 'force-dynamic';
 
 type CacheEntry = { at: number; data: any[]; source: string };
 
-const hotCache = new Map<string, CacheEntry>();
-let stale: CacheEntry | null = null;
-const inflight = new Map<string, Promise<{ entry: CacheEntry; nextCursor: string | null }>>();
-
 const HOT_TTL_MS = 8000;
 const STALE_TTL_MS = 30000;
+
+type CacheState = {
+  hotCache: Map<string, CacheEntry>;
+  inflight: Map<string, Promise<{ entry: CacheEntry; nextCursor: string | null }>>;
+  stale: CacheEntry | null;
+};
+
+function getCacheState(): CacheState {
+  const existing = (globalThis as any).__adminOrdersApiCache as CacheState | undefined;
+  if (existing) return existing;
+  const created: CacheState = { hotCache: new Map(), inflight: new Map(), stale: null };
+  (globalThis as any).__adminOrdersApiCache = created;
+  return created;
+}
 
 function getSupabaseAdmin() {
   const existing = (globalThis as any).__supabaseAdmin;
@@ -35,19 +45,20 @@ export async function GET(req: Request) {
   const startedAt = Date.now();
   try {
     const now = Date.now();
+    const cacheState = getCacheState();
     const { searchParams } = new URL(req.url);
     const includeItemsRaw = String(searchParams.get('includeItems') || '').toLowerCase();
     const includeItems = includeItemsRaw === '1' || includeItemsRaw === 'true';
     const id = searchParams.get('id');
 
-    const defaultLimit = includeItems ? 40 : 60;
-    const maxLimit = includeItems ? 60 : 100;
+    const defaultLimit = includeItems ? 40 : 20;
+    const maxLimit = includeItems ? 60 : 60;
     const requestedLimit = Number(searchParams.get('limit') || String(defaultLimit));
     const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), maxLimit) : defaultLimit;
     const cursor = searchParams.get('cursor');
 
     const cacheKey = id ? `id:${id}:items:${includeItems ? 1 : 0}` : `list:${limit}:${cursor || ''}:items:${includeItems ? 1 : 0}`;
-    const hit = hotCache.get(cacheKey);
+    const hit = cacheState.hotCache.get(cacheKey);
     if (hit && now - hit.at < HOT_TTL_MS) {
       const res = NextResponse.json({ success: true, data: hit.data, source: hit.source, cursor: cursor || null });
       res.headers.set('x-response-ms', String(Date.now() - startedAt));
@@ -57,10 +68,15 @@ export async function GET(req: Request) {
       return res;
     }
 
-    const existing = inflight.get(cacheKey);
+    const existing = cacheState.inflight.get(cacheKey);
     if (existing) {
-      if (stale && now - stale.at < STALE_TTL_MS) {
-        const res = NextResponse.json({ success: true, data: stale.data, source: `${stale.source}_stale`, cursor: cursor || null });
+      if (cacheState.stale && now - cacheState.stale.at < STALE_TTL_MS) {
+        const res = NextResponse.json({
+          success: true,
+          data: cacheState.stale.data,
+          source: `${cacheState.stale.source}_stale`,
+          cursor: cursor || null,
+        });
         res.headers.set('x-response-ms', String(Date.now() - startedAt));
         res.headers.set('x-cache', 'STALE');
         recordMetric({ at: Date.now(), name: 'GET /api/admin/orders', ms: Date.now() - startedAt, ok: true, meta: { cache: 'STALE', inflight: true } });
@@ -89,10 +105,10 @@ export async function GET(req: Request) {
         return { entry, nextCursor: null };
       })();
 
-      inflight.set(cacheKey, work);
-      const { entry } = await work.finally(() => inflight.delete(cacheKey));
-      hotCache.set(cacheKey, entry);
-      stale = entry;
+      cacheState.inflight.set(cacheKey, work);
+      const { entry } = await work.finally(() => cacheState.inflight.delete(cacheKey));
+      cacheState.hotCache.set(cacheKey, entry);
+      cacheState.stale = entry;
 
       const res = NextResponse.json({ success: true, data: entry.data[0], source: entry.source });
       res.headers.set('x-response-ms', String(Date.now() - startedAt));
@@ -104,7 +120,7 @@ export async function GET(req: Request) {
 
     const selectList = includeItems
       ? 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,observations,source,created_at,updated_at'
-      : 'id,customer,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,created_at,updated_at';
+      : 'id,customer,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,sellerId,sellerName,source,created_at,updated_at';
 
     const work = (async () => {
       const ordered = cursor
@@ -136,19 +152,19 @@ export async function GET(req: Request) {
       return { entry, nextCursor };
     })();
 
-    inflight.set(cacheKey, work);
-    const { entry, nextCursor } = await work.finally(() => inflight.delete(cacheKey));
+    cacheState.inflight.set(cacheKey, work);
+    const { entry, nextCursor } = await work.finally(() => cacheState.inflight.delete(cacheKey));
 
-    hotCache.set(cacheKey, entry);
-    stale = entry;
+    cacheState.hotCache.set(cacheKey, entry);
+    cacheState.stale = entry;
 
     const res = NextResponse.json({ success: true, data: entry.data, source: entry.source, cursor: cursor || null, nextCursor });
     res.headers.set('x-response-ms', String(Date.now() - startedAt));
     res.headers.set('x-cache', 'MISS');
-    while (hotCache.size > 200) {
-      const firstKey = hotCache.keys().next().value as string | undefined;
+    while (cacheState.hotCache.size > 200) {
+      const firstKey = cacheState.hotCache.keys().next().value as string | undefined;
       if (!firstKey) break;
-      hotCache.delete(firstKey);
+      cacheState.hotCache.delete(firstKey);
     }
     recordMetric({ at: Date.now(), name: 'GET /api/admin/orders', ms: Date.now() - startedAt, ok: true, meta: { source: entry.source } });
     void maybeAlert({ at: Date.now(), name: 'GET /api/admin/orders', ms: Date.now() - startedAt, ok: true, meta: { source: entry.source } });
@@ -159,8 +175,13 @@ export async function GET(req: Request) {
     recordMetric({ at: now, name: 'GET /api/admin/orders', ms, ok: false, meta: { error: e?.message } });
     void maybeAlert({ at: now, name: 'GET /api/admin/orders', ms, ok: false, meta: { error: e?.message } });
 
-    if (stale && now - stale.at < STALE_TTL_MS) {
-      const res = NextResponse.json({ success: true, data: stale.data, source: `${stale.source}_stale` });
+    const cacheState = getCacheState();
+    if (cacheState.stale && now - cacheState.stale.at < STALE_TTL_MS) {
+      const res = NextResponse.json({
+        success: true,
+        data: cacheState.stale.data,
+        source: `${cacheState.stale.source}_stale`,
+      });
       res.headers.set('x-response-ms', String(ms));
       res.headers.set('x-cache', 'STALE');
       return res;

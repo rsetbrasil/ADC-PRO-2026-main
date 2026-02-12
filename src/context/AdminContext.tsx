@@ -136,7 +136,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (!user) return;
 
     const [ordersRes, customersRes, commRes, auditRes, avariaRes] = await Promise.allSettled([
-      fetch('/api/admin/orders?limit=60&includeItems=0', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/admin/orders?limit=20&includeItems=0', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/customers', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/commission-payments', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/stock-audits', { cache: 'no-store' }).then((r) => r.json()),
@@ -170,7 +170,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
     setIsLoadingMoreOrders(true);
     try {
-      const res = await fetch(`/api/admin/orders?limit=60&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
+      const res = await fetch(`/api/admin/orders?limit=40&includeItems=0&cursor=${encodeURIComponent(ordersNextCursor)}`, { cache: 'no-store' }).then((r) => r.json());
       if (!res?.success || !res?.data) return;
 
       const next = res.nextCursor || null;

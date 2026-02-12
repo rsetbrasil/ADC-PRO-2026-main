@@ -26,7 +26,7 @@ export async function GET() {
       const res = await supabase
         .from('products')
         .select(
-          'id,code,name,price,original_price,cost,on_sale,promotion_end_date,is_hidden,category,subcategory,stock,min_stock,unit,image_url,max_installments,payment_condition,commission_type,commission_value,data_ai_hint,created_at,deleted_at'
+          'id,code,name,description,long_description,price,original_price,cost,on_sale,promotion_end_date,is_hidden,category,subcategory,stock,min_stock,unit,image_url,image_urls,max_installments,payment_condition,commission_type,commission_value,data_ai_hint,created_at,deleted_at'
         )
         .is('deleted_at', null)
         .order('id', { ascending: false })
@@ -40,7 +40,7 @@ export async function GET() {
       if (message.toLowerCase().includes('statement timeout')) {
         const res2 = await supabase
           .from('products')
-          .select('id,code,name,price,category,subcategory,stock,image_url,is_hidden,created_at,deleted_at')
+          .select('id,code,name,price,category,subcategory,stock,image_url,image_urls,is_hidden,created_at,deleted_at')
           .is('deleted_at', null)
           .limit(150);
         if ((res2 as any).error) throw (res2 as any).error;

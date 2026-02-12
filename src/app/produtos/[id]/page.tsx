@@ -108,6 +108,7 @@ export default function ProductDetailPage() {
                             className="object-contain"
                             sizes="(max-width: 768px) 100vw, 50vw"
                             data-ai-hint={product['data-ai-hint']}
+                            unoptimized={url.startsWith('data:')}
                           />
                         </CardContent>
                       </Card>

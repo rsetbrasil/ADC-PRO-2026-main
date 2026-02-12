@@ -1,9 +1,11 @@
 const http = require('http');
 
+const path = process.argv[2] || '/api/admin/orders?limit=20&includeItems=0';
+
 const options = {
   hostname: 'localhost',
   port: 3100,
-  path: '/api/admin/orders?limit=60&includeItems=0',
+  path,
   method: 'GET'
 };
 

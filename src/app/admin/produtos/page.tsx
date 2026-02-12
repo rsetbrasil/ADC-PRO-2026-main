@@ -273,6 +273,7 @@ export default function ManageProductsPage() {
                                                         alt={product.name}
                                                         fill
                                                         className="object-contain"
+                                                        unoptimized={((product.imageUrls && product.imageUrls.length > 0) ? product.imageUrls[0] : (product.imageUrl || '')).startsWith('data:')}
                                                     />
                                                 </div>
                                             </TableCell>

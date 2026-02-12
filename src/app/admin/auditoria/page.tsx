@@ -229,6 +229,7 @@ function StockAuditTab() {
                                                         alt={product.name}
                                                         fill
                                                         className="object-contain"
+                                                        unoptimized={((product.imageUrls && product.imageUrls.length > 0) ? product.imageUrls[0] : '').startsWith('data:')}
                                                     />
                                                 </div>
                                             </TableCell>
@@ -316,6 +317,5 @@ export default function AuditoriaPage() {
         <StockAuditTab />
     );
 }
-
 
 
