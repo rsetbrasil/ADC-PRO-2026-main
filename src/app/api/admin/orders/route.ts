@@ -53,11 +53,12 @@ export async function GET(req: Request) {
 
     const defaultLimit = includeItems ? 40 : 20;
     const maxLimit = includeItems ? 60 : 40;
-    const requestedLimit = Number(searchParams.get('limit') || String(defaultLimit));
-    const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), maxLimit) : defaultLimit;
+    const requestedLimit = searchParams.get('limit') === 'all' ? 10000 : Number(searchParams.get('limit') || String(defaultLimit));
+    const isFetchAll = searchParams.get('limit') === 'all';
+    const limit = isFetchAll ? 10000 : (Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), maxLimit) : defaultLimit);
     const cursor = searchParams.get('cursor');
 
-    const cacheKey = id ? `id:${id}:items:${includeItems ? 1 : 0}` : `list:${limit}:${cursor || ''}:items:${includeItems ? 1 : 0}`;
+    const cacheKey = id ? `id:${id}:items:${includeItems ? 1 : 0}` : `list:${isFetchAll ? 'all' : limit}:${cursor || ''}:items:${includeItems ? 1 : 0}`;
     const hit = cacheState.hotCache.get(cacheKey);
     if (hit && now - hit.at < HOT_TTL_MS) {
       const res = NextResponse.json({ success: true, data: hit.data, source: hit.source, cursor: cursor || null });

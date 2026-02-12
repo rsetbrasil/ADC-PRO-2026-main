@@ -4,14 +4,12 @@
   "/api/auth/users/route": "app/api/auth/users/route.js",
   "/api/audit/logs/route": "app/api/audit/logs/route.js",
   "/api/public/categories/route": "app/api/public/categories/route.js",
-  "/api/admin/orders/route": "app/api/admin/orders/route.js",
   "/api/admin/customers/route": "app/api/admin/customers/route.js",
   "/api/admin/commission-payments/route": "app/api/admin/commission-payments/route.js",
   "/api/admin/stock-audits/route": "app/api/admin/stock-audits/route.js",
   "/api/admin/avarias/route": "app/api/admin/avarias/route.js",
-  "/api/audit/log/route": "app/api/audit/log/route.js",
+  "/api/admin/orders/route": "app/api/admin/orders/route.js",
   "/admin/pedidos/page": "app/admin/pedidos/page.js",
   "/carnet/[id]/page": "app/carnet/[id]/page.js",
-  "/login/page": "app/login/page.js",
-  "/admin/page": "app/admin/page.js"
+  "/login/page": "app/login/page.js"
 }
