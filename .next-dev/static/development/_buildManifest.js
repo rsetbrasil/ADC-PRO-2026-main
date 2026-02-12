@@ -1,0 +1,1 @@
+self.__BUILD_MANIFEST = (function(a){return {__rewrites:{afterFiles:[{has:a,source:"\u002F@vite\u002Fclient",destination:"\u002F__vite_client.js"}],beforeFiles:[],fallback:[]},__routerFilterStatic:a,__routerFilterDynamic:a,sortedPages:["\u002F_app"]}}(void 0));self.__BUILD_MANIFEST_CB && self.__BUILD_MANIFEST_CB()

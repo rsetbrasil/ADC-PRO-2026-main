@@ -1,0 +1,6 @@
+{
+  "/api/public/products/route": "app/api/public/products/route.js",
+  "/api/audit/logs/route": "app/api/audit/logs/route.js",
+  "/api/public/categories/route": "app/api/public/categories/route.js",
+  "/admin/pedidos/page": "app/admin/pedidos/page.js"
+}

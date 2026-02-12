@@ -1,9 +1,59 @@
 'use server';
 
-import { db } from '@/lib/db';
 import { Order, User } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@supabase/supabase-js';
+import { mapDbOrderToOrder, mapOrderPatchToDb } from '@/lib/supabase-mappers';
+
+let cachedOrdersColumnStyle: 'camel' | 'snake' | null = null;
+
+function calculateCommissionFromItems(items: any[], productCommission: Map<string, { type: string | null; value: number | null }>, fallbackPercentage = 5) {
+    const toNumber = (value: unknown) => {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+        if (typeof value === 'string') {
+            const normalized = value
+                .replace(/\s/g, '')
+                .replace(/^R\$/i, '')
+                .replace(/\./g, '')
+                .replace(',', '.');
+            const parsed = Number.parseFloat(normalized);
+            return Number.isFinite(parsed) ? parsed : 0;
+        }
+        return 0;
+    };
+
+    return (items || []).reduce((total: number, item: any) => {
+        const id = String(item?.id || '');
+        const quantity = toNumber(item?.quantity);
+        const price = toNumber(item?.price);
+        const itemTotal = price * quantity;
+
+        const cfg = productCommission.get(id);
+        const hasExplicitValue = cfg && typeof cfg.value === 'number' && Number.isFinite(cfg.value) && cfg.value > 0;
+        const commissionType = hasExplicitValue ? (cfg!.type || 'percentage') : 'percentage';
+        const commissionValue = hasExplicitValue ? cfg!.value! : fallbackPercentage;
+
+        if (commissionType === 'fixed') {
+            return total + commissionValue * quantity;
+        }
+
+        return total + itemTotal * (commissionValue / 100);
+    }, 0);
+}
+
+async function detectOrdersColumnStyle(supabase: any): Promise<'camel' | 'snake'> {
+    if (cachedOrdersColumnStyle) return cachedOrdersColumnStyle;
+    const { data, error } = await supabase.from('orders').select('*').limit(1);
+    if (error) throw error;
+    const row = (data || [])[0] as Record<string, any> | undefined;
+    if (!row) {
+        cachedOrdersColumnStyle = 'camel';
+        return cachedOrdersColumnStyle;
+    }
+    const keys = Object.keys(row);
+    cachedOrdersColumnStyle = keys.some((k) => k.includes('_')) ? 'snake' : 'camel';
+    return cachedOrdersColumnStyle;
+}
 
 // Fetch all orders
 export async function getAdminOrdersAction() {
@@ -11,21 +61,30 @@ export async function getAdminOrdersAction() {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const { data, error } = await supabase
-            .from('orders')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return { success: true, data: (data || []) as unknown as Order[] };
-    } catch {
+        const style = await detectOrdersColumnStyle(supabase);
+        const attempt = async (orderBy: string) => {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('*')
+                .order(orderBy, { ascending: false });
+            if (error) throw error;
+            return (data || []).map(mapDbOrderToOrder);
+        };
+
         try {
-            const allOrders = await db.order.findMany({
-                orderBy: { date: 'desc' }
-            });
-            return { success: true, data: allOrders as unknown as Order[] };
-        } catch (error: any) {
-            return { success: false, error: error.message };
+            const orders = await attempt(style === 'snake' ? 'created_at' : 'createdAt');
+            return { success: true, data: orders };
+        } catch {
+            try {
+                const orders = await attempt(style === 'snake' ? 'date' : 'date');
+                return { success: true, data: orders };
+            } catch {
+                const orders = await attempt('date');
+                return { success: true, data: orders };
+            }
         }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao buscar pedidos' };
     }
 }
 // Update Order Status
@@ -34,24 +93,92 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const { error } = await supabase
+        const style = await detectOrdersColumnStyle(supabase);
+
+        const { data: row, error: fetchError } = await supabase
             .from('orders')
-            .update({ status })
-            .eq('id', orderId);
+            .select('*')
+            .eq('id', orderId)
+            .maybeSingle();
+        if (fetchError) throw fetchError;
+        if (!row) throw new Error('Order not found');
+
+        const current = mapDbOrderToOrder(row);
+
+        if (status === 'Entregue') {
+            let sellerId = current.sellerId || undefined;
+            let sellerName = current.sellerName || undefined;
+
+            if (!sellerId && sellerName) {
+                const { data: matchedUser, error: userError } = await supabase
+                    .from('users')
+                    .select('id,name')
+                    .eq('name', sellerName)
+                    .limit(1)
+                    .maybeSingle();
+                if (userError) throw userError;
+                if (matchedUser?.id) {
+                    sellerId = matchedUser.id;
+                    sellerName = matchedUser.name;
+                }
+            }
+
+            const shouldComputeCommission =
+                current.isCommissionManual !== true &&
+                (!Number.isFinite(current.commission as any) || (current.commission ?? 0) <= 0) &&
+                !!sellerId;
+
+            if (shouldComputeCommission) {
+                const items = (current.items as any) || [];
+                const itemIds: string[] = Array.from(
+                    new Set<string>((items || []).map((i: any) => String(i?.id || '')).filter(Boolean))
+                );
+
+                const { data: productsRows, error: productsError } = itemIds.length
+                    ? await supabase
+                        .from('products')
+                        .select('id,commission_type,commission_value,commissionType,commissionValue')
+                        .in('id', itemIds)
+                    : { data: [], error: null };
+                if (productsError) throw productsError;
+
+                const productCommission = new Map(
+                    (productsRows || []).map((p: any) => [
+                        String(p.id),
+                        {
+                            type: (p.commission_type ?? p.commissionType ?? null) as any,
+                            value: (p.commission_value ?? p.commissionValue ?? null) as any,
+                        },
+                    ])
+                );
+                const commission = calculateCommissionFromItems(items, productCommission);
+
+                const patch: Partial<Order> = {
+                    status,
+                    commission,
+                    commissionPaid: false,
+                    isCommissionManual: false,
+                };
+                if (sellerId && sellerId !== current.sellerId) patch.sellerId = sellerId;
+                if (sellerName && sellerName !== current.sellerName) patch.sellerName = sellerName;
+
+                const payload = mapOrderPatchToDb(patch, style);
+                const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
+                if (error) throw error;
+
+                revalidatePath('/admin/pedidos');
+                return { success: true };
+            }
+        }
+
+        const payload = mapOrderPatchToDb({ status }, style);
+        const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
         if (error) throw error;
+
         revalidatePath('/admin/pedidos');
         return { success: true };
-    } catch {
-        try {
-            await db.order.update({
-                where: { id: orderId },
-                data: { status }
-            });
-            revalidatePath('/admin/pedidos');
-            return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao atualizar status' };
     }
 }
 
@@ -67,17 +194,8 @@ export async function moveOrderToTrashAction(orderId: string) {
         if (error) throw error;
         revalidatePath('/admin/pedidos');
         return { success: true };
-    } catch {
-        try {
-            await db.order.update({
-                where: { id: orderId },
-                data: { status: 'Excluído' }
-            });
-            revalidatePath('/admin/pedidos');
-            return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao mover para lixeira' };
     }
 }
 
@@ -93,16 +211,8 @@ export async function permanentlyDeleteOrderAction(orderId: string) {
         if (error) throw error;
         revalidatePath('/admin/pedidos');
         return { success: true };
-    } catch {
-        try {
-            await db.order.delete({
-                where: { id: orderId }
-            });
-            revalidatePath('/admin/pedidos');
-            return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao excluir pedido' };
     }
 }
 
@@ -112,14 +222,16 @@ export async function recordInstallmentPaymentAction(orderId: string, installmen
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const style = await detectOrdersColumnStyle(supabase);
+        const column = style === 'snake' ? 'installment_details' : 'installmentDetails';
         const { data: order, error: fError } = await supabase
-            .from('orders')
-            .select('installmentDetails')
-            .eq('id', orderId)
-            .maybeSingle();
+                .from('orders')
+                .select(column)
+                .eq('id', orderId)
+                .maybeSingle();
         if (fError) throw fError;
         if (!order) throw new Error('Order not found');
-        const installments = (order.installmentDetails as any) || [];
+        const installments = ((order as any)[column] as any) || [];
         const updatedInstallments = installments.map((inst: any) => {
             if (inst.installmentNumber === installmentNumber) {
                 const currentPaid = inst.paidAmount || 0;
@@ -136,41 +248,14 @@ export async function recordInstallmentPaymentAction(orderId: string, installmen
         });
         const { error } = await supabase
             .from('orders')
-            .update({ installmentDetails: updatedInstallments })
+            .update({ [column]: updatedInstallments })
             .eq('id', orderId);
         if (error) throw error;
 
         revalidatePath('/admin/pedidos');
-    } catch {
-        try {
-            const order = await db.order.findUnique({
-                where: { id: orderId }
-            });
-            if (!order) throw new Error('Order not found');
-            const installments = (order.installmentDetails as any) || [];
-            const updatedInstallments = installments.map((inst: any) => {
-                if (inst.installmentNumber === installmentNumber) {
-                    const currentPaid = inst.paidAmount || 0;
-                    const newPaid = currentPaid + payment.amount;
-                    const newStatus = newPaid >= inst.amount ? 'Pago' : 'Parcial';
-                    return {
-                        ...inst,
-                        paidAmount: newPaid,
-                        status: newStatus,
-                        payments: [...(inst.payments || []), payment]
-                    };
-                }
-                return inst;
-            });
-            await db.order.update({
-                where: { id: orderId },
-                data: { installmentDetails: updatedInstallments }
-            });
-            revalidatePath('/admin/pedidos');
-            return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao registrar pagamento da parcela' };
     }
 }
 
@@ -180,32 +265,8 @@ export async function updateOrderDetailsAction(orderId: string, data: Partial<Or
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        const payload: any = {};
-        if (data.status !== undefined) payload.status = data.status;
-        if (data.customer !== undefined) payload.customer = data.customer as any;
-        if (data.items !== undefined) payload.items = data.items as any;
-        if (data.total !== undefined) payload.total = data.total;
-        if (data.discount !== undefined) payload.discount = data.discount;
-        if (data.downPayment !== undefined) payload.downPayment = data.downPayment;
-        if (data.installments !== undefined) payload.installments = data.installments;
-        if (data.installmentValue !== undefined) payload.installmentValue = data.installmentValue;
-        if (data.date !== undefined) payload.date = data.date;
-        if (data.firstDueDate !== undefined) payload.firstDueDate = data.firstDueDate as any;
-        if (data.paymentMethod !== undefined) payload.paymentMethod = data.paymentMethod as any;
-        if (data.installmentDetails !== undefined) payload.installmentDetails = data.installmentDetails as any;
-        if (data.attachments !== undefined) payload.attachments = data.attachments as any;
-        if (data.sellerId !== undefined) payload.sellerId = data.sellerId;
-        if (data.sellerName !== undefined) payload.sellerName = data.sellerName;
-        if (data.commission !== undefined) payload.commission = data.commission;
-        if (data.commissionPaid !== undefined) payload.commissionPaid = data.commissionPaid as any;
-        if (data.isCommissionManual !== undefined) payload.isCommissionManual = data.isCommissionManual as any;
-        if (data.observations !== undefined) payload.observations = data.observations;
-        if (data.source !== undefined) payload.source = data.source as any;
-        if (data.createdById !== undefined) payload.createdById = data.createdById;
-        if (data.createdByName !== undefined) payload.createdByName = data.createdByName;
-        if (data.createdByRole !== undefined) payload.createdByRole = data.createdByRole as any;
-        if (data.createdIp !== undefined) payload.createdIp = data.createdIp;
-        if (data.asaas !== undefined) payload.asaas = data.asaas as any;
+        const style = await detectOrdersColumnStyle(supabase);
+        const payload = mapOrderPatchToDb(data, style);
         const { error } = await supabase
             .from('orders')
             .update(payload)
@@ -213,21 +274,7 @@ export async function updateOrderDetailsAction(orderId: string, data: Partial<Or
         if (error) throw error;
         revalidatePath('/admin/pedidos');
         return { success: true };
-    } catch {
-        try {
-            await db.order.update({
-                where: { id: orderId },
-                data: {
-                    ...data,
-                    installmentDetails: data.installmentDetails as any,
-                    firstDueDate: data.firstDueDate instanceof Date ? data.firstDueDate.toISOString() : data.firstDueDate,
-                    date: data.date,
-                }
-            });
-            revalidatePath('/admin/pedidos');
-            return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao atualizar pedido' };
     }
 }

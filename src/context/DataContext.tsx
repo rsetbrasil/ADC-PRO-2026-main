@@ -4,7 +4,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useRef } from 'react';
 import type { Product, Category } from '@/lib/types';
-import { getProductsAction, getCategoriesAction } from '@/app/actions/data';
 
 // This context now only handles PUBLIC data.
 // Admin-related data has been moved to AdminContext for performance optimization.
@@ -54,15 +53,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       // Fetch Products
       try {
-        const result = await getProductsAction();
-        if (result.success && result.data) {
-          // Mapper might be needed if DB returns snake_case but Type expects camelCase
-          // Drizzle usually handles this via schema definition if configured or we map here.
-          // schema.ts defined: `canBeAssigned: boolean('can_be_assigned')` results in camelCase `canBeAssigned` in returned object.
-          // So we should be fine assuming schema matches types.
+        const res = await fetch('/api/public/products', { cache: 'no-store' });
+        const result = await res.json();
+        if (result?.success && Array.isArray(result.data)) {
           setProducts(result.data as Product[]);
         } else {
-          console.error(result.error);
+          console.error(result?.error || 'Failed to fetch products');
         }
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -72,9 +68,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       // Fetch Categories
       try {
-        const result = await getCategoriesAction();
-        if (result.success && result.data) {
+        const res = await fetch('/api/public/categories', { cache: 'no-store' });
+        const result = await res.json();
+        if (result?.success && Array.isArray(result.data)) {
           setCategories(result.data as Category[]);
+        } else {
+          console.error(result?.error || 'Failed to fetch categories');
         }
       } catch (error) {
         console.error('Error fetching categories:', error);

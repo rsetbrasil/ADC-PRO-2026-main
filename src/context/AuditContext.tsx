@@ -3,7 +3,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import type { AuditLog, User } from '@/lib/types';
-import { getAuditLogsAction, logActionAction } from '@/app/actions/audit';
 
 interface AuditContextType {
   auditLogs: AuditLog[];
@@ -20,9 +19,10 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const result = await getAuditLogsAction();
-      if (result.success && result.data) {
-        setAuditLogs(result.data);
+      const res = await fetch('/api/audit/logs', { cache: 'no-store' });
+      const result = await res.json();
+      if (result?.success && Array.isArray(result.data)) {
+        setAuditLogs(result.data as AuditLog[]);
       }
     } catch (error) {
       console.error("Error fetching audit logs:", error);
@@ -52,10 +52,11 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
     // We'll let polling pick it up or push it locally if we want instant feedback.
 
     try {
-      const result = await logActionAction(action, details, user);
-      if (result.success) {
-        // fetchLogs(); // Refresh logs immediately
-      }
+      await fetch('/api/audit/log', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action, details, user }),
+      });
     } catch (error) {
       console.error("Error writing audit log:", error);
     }
@@ -75,4 +76,3 @@ export const useAudit = () => {
   }
   return context;
 };
-

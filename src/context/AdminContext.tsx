@@ -9,6 +9,7 @@ import { ptBR } from 'date-fns/locale';
 import { useAuth } from './AuthContext';
 import { normalizeCpf } from '@/lib/customer-trash';
 import { formatCustomerCode, reserveCustomerCodes } from '@/lib/customer-code';
+import { calculateOrderCommission } from '@/lib/commission';
 
 // Server Actions
 import { getAdminOrdersAction, updateOrderStatusAction, moveOrderToTrashAction, permanentlyDeleteOrderAction, recordInstallmentPaymentAction, updateOrderDetailsAction } from '@/app/actions/admin/orders';
@@ -187,9 +188,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       createdAt: new Date().toISOString(),
       items: order.items || [],
       customer: order.customer!,
-      sellerId: user?.id || order.sellerId || '',
-      sellerName: user?.name || order.sellerName || '',
+      sellerId: order.sellerId || user?.id || '',
+      sellerName: order.sellerName || user?.name || '',
+      commissionPaid: false,
     } as Order;
+
+    orderData.commission = calculateOrderCommission(orderData, productsData);
 
     const res = await createOrderAction(orderData, order.customer);
     if (!res.success) {
@@ -235,7 +239,30 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const updateOrderStatus = async (orderId: string, status: Order['status'], logAction: LogAction, user: User | null) => {
     const previousOrder = orders.find(o => o.id === orderId);
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    let baseNext = previousOrder ? ({ ...previousOrder, status } as Order) : null;
+
+    const patch: Partial<Order> = { status };
+    if (status === 'Entregue' && baseNext && !baseNext.sellerId && baseNext.sellerName) {
+      const matched = users.find(u => u.name === baseNext!.sellerName);
+      if (matched) {
+        baseNext = { ...baseNext, sellerId: matched.id, sellerName: matched.name };
+        patch.sellerId = matched.id;
+        patch.sellerName = matched.name;
+      }
+    }
+    if (
+      status === 'Entregue' &&
+      baseNext &&
+      baseNext.isCommissionManual !== true &&
+      (!Number.isFinite(baseNext.commission as any) || (baseNext.commission ?? 0) <= 0) &&
+      !!baseNext.sellerId
+    ) {
+      patch.commission = calculateOrderCommission(baseNext, productsData);
+      patch.commissionPaid = false;
+      patch.isCommissionManual = false;
+    }
+
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
     try {
       const res = await updateOrderStatusAction(orderId, status, user);
       if (!res.success) throw new Error(res.error || 'Falha ao atualizar status');
@@ -379,6 +406,17 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       updatedOrder.installmentDetails = [];
       updatedOrder.installmentValue = 0;
       updatedOrder.installments = 0;
+    }
+
+    const shouldRecalculateCommission =
+      updatedOrder.isCommissionManual !== true &&
+      (details.sellerId !== undefined ||
+        details.sellerName !== undefined ||
+        details.items !== undefined ||
+        (details.status === 'Entregue' && currentOrder.status !== 'Entregue'));
+
+    if (shouldRecalculateCommission) {
+      updatedOrder.commission = calculateOrderCommission(updatedOrder, productsData);
     }
 
     setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));

@@ -51,6 +51,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { calculateOrderCommission } from '@/lib/commission';
 
 interface OrderEditDialogProps {
     open: boolean;
@@ -104,7 +105,6 @@ export function OrderEditDialog({ open, onOpenChange, order }: OrderEditDialogPr
 
     // Local state for editing
     const [installmentsInput, setInstallmentsInput] = useState(1);
-    const [commissionInput, setCommissionInput] = useState('0,00');
     const [observationsInput, setObservationsInput] = useState('');
     const [discountInput, setDiscountInput] = useState(0);
     const [downPaymentInput, setDownPaymentInput] = useState(0);
@@ -117,7 +117,6 @@ export function OrderEditDialog({ open, onOpenChange, order }: OrderEditDialogPr
     useEffect(() => {
         if (order) {
             setInstallmentsInput(order.installments || 1);
-            setCommissionInput(formatBRL(order.commission));
             setObservationsInput(order.observations || '');
             setDiscountInput(order.discount || 0);
             setDownPaymentInput(0);
@@ -161,18 +160,9 @@ export function OrderEditDialog({ open, onOpenChange, order }: OrderEditDialogPr
 
     const handleCalculateCommission = () => {
         if (!order || !user) return;
-        updateOrderDetails(order.id, { isCommissionManual: false }, auditLogAction, user);
+        const commission = calculateOrderCommission({ ...order, isCommissionManual: false }, products || []);
+        updateOrderDetails(order.id, { commission, isCommissionManual: false }, auditLogAction, user);
         toast({ title: 'Comissão Recalculada!', description: `A comissão do pedido #${order.id} foi recalculada.` });
-    };
-
-    const handleUpdateCommission = () => {
-        if (!order || !user) return;
-        const value = parseFloat(commissionInput.replace(/\./g, '').replace(',', '.'));
-        if (isNaN(value) || value < 0) {
-            toast({ title: 'Valor inválido', description: 'Por favor, insira um valor de comissão válido.', variant: 'destructive' });
-            return;
-        }
-        updateOrderDetails(order.id, { commission: value, isCommissionManual: true }, auditLogAction, user);
     };
 
     const handleUpdateDiscount = () => {
@@ -299,28 +289,15 @@ export function OrderEditDialog({ open, onOpenChange, order }: OrderEditDialogPr
                                     <>
                                         <div className="flex justify-between text-base items-center">
                                             <span className="font-semibold text-green-600 flex items-center gap-2"><Percent className="h-4 w-4" />Comissão:</span>
-                                            {isManagerOrAdmin ? (
-                                                <div className="flex gap-2 items-center">
-                                                    <span className="text-sm">R$</span>
-                                                    <Input
-                                                        type="text"
-                                                        value={commissionInput}
-                                                        onChange={(e) => setCommissionInput(e.target.value)}
-                                                        onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateCommission() }}
-                                                        className="w-24 h-8 text-right"
-                                                    />
+                                            <div className="flex gap-2 items-center">
+                                                <span className="font-bold text-green-600">{formatCurrency(order.commission || 0)}</span>
+                                                {isManagerOrAdmin && (
                                                     <Button size="icon" variant="outline" onClick={handleCalculateCommission} className="h-8 w-8">
                                                         <Calculator className="h-4 w-4" />
                                                     </Button>
-                                                    <Button size="icon" variant="outline" onClick={handleUpdateCommission} className="h-8 w-8">
-                                                        <Save className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            ) : (
-                                                <span className="font-bold text-green-600">{formatCurrency(order.commission || 0)}</span>
-                                            )}
+                                                )}
+                                            </div>
                                         </div>
-                                        {order.isCommissionManual && <p className="text-xs text-muted-foreground text-right">Valor de comissão manual</p>}
                                     </>
                                 )}
                             </CardContent>

@@ -34,6 +34,7 @@ import { allocateNextCustomerCode } from '@/lib/customer-code';
 import { findCustomerByCpfAction, createOrderAction, allocateNextCustomerCodeAction } from '@/app/actions/checkout';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WhatsAppIcon } from './WhatsAppIcon';
+import { calculateOrderCommission } from '@/lib/commission';
 
 function isValidCPF(cpf: string) {
   if (typeof cpf !== 'string') return false;
@@ -77,38 +78,6 @@ const checkoutSchema = z.object({
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
-const calculateCommission = (order: Order, allProducts: Product[]) => {
-  if (order.isCommissionManual && typeof order.commission === 'number') {
-    return order.commission;
-  }
-
-  if (!order.sellerId) {
-    return 0;
-  }
-
-  const fallbackPercentage = 5;
-
-  return order.items.reduce((totalCommission, item) => {
-    const product = allProducts.find(p => p.id === item.id);
-    const hasExplicitCommissionValue =
-      product && typeof product.commissionValue === 'number' && !Number.isNaN(product.commissionValue);
-
-    const commissionType = hasExplicitCommissionValue ? (product!.commissionType || 'percentage') : 'percentage';
-    const commissionValue = hasExplicitCommissionValue ? product!.commissionValue! : fallbackPercentage;
-
-    if (commissionType === 'fixed') {
-      return totalCommission + (commissionValue * item.quantity);
-    }
-
-    if (commissionType === 'percentage') {
-      const itemTotal = item.price * item.quantity;
-      return totalCommission + (itemTotal * (commissionValue / 100));
-    }
-
-    return totalCommission;
-  }, 0);
 };
 
 function sanitizeCustomerForFirestore(customer: CustomerInfo): Record<string, any> {
@@ -410,7 +379,7 @@ export default function CheckoutForm() {
         commission: 0,
       };
 
-      orderToSave.commission = calculateCommission(orderToSave, products);
+      orderToSave.commission = calculateOrderCommission(orderToSave, products);
 
       // Save Order via Server Action (handles stock and customer upsert)
       const payload: any = {
