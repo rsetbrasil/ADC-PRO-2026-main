@@ -124,6 +124,9 @@ export async function GET(req: Request) {
       : 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,source,created_at,updated_at';
 
     const work = (async () => {
+      const countRes = !cursor ? await supabase.from('orders').select('id', { count: 'exact', head: true }) : null;
+      const totalCount = countRes?.count || null;
+
       const parseCursor = (raw: string | null) => {
         if (!raw) return { date: null as string | null, id: null as string | null };
         const s = String(raw);
@@ -205,16 +208,16 @@ export async function GET(req: Request) {
       const last = idPage[idPage.length - 1];
       const nextCursor = last?.date && last?.id ? `${String(last.date)}|${String(last.id)}` : null;
       const entry: CacheEntry = { at: now, data: mapped, source: 'by_date_ids' };
-      return { entry, nextCursor };
+      return { entry, nextCursor, totalCount };
     })();
 
     cacheState.inflight.set(cacheKey, work);
-    const { entry, nextCursor } = await work.finally(() => cacheState.inflight.delete(cacheKey));
+    const { entry, nextCursor, totalCount } = await work.finally(() => cacheState.inflight.delete(cacheKey));
 
     cacheState.hotCache.set(cacheKey, entry);
     cacheState.stale = entry;
 
-    const res = NextResponse.json({ success: true, data: entry.data, source: entry.source, cursor: cursor || null, nextCursor });
+    const res = NextResponse.json({ success: true, data: entry.data, source: entry.source, cursor: cursor || null, nextCursor, totalCount });
     res.headers.set('x-response-ms', String(Date.now() - startedAt));
     res.headers.set('x-cache', 'MISS');
     while (cacheState.hotCache.size > 200) {

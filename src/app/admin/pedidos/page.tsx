@@ -118,7 +118,7 @@ const months = [
 
 export default function OrdersAdminPage() {
     const { updateOrderStatus, recordInstallmentPayment, updateOrderDetails, updateInstallmentDueDate, deleteOrder, permanentlyDeleteOrder, reversePayment, emptyTrash, updateInstallmentAmount } = useAdmin();
-    const { orders, customers, loadMoreOrders, hasMoreOrders, isLoadingMoreOrders } = useAdminData();
+    const { orders, customers, loadMoreOrders, fetchAllOrders, totalOrdersCount, hasMoreOrders, isLoadingMoreOrders } = useAdminData();
     const { products } = useData();
     const { user, users } = useAuth();
     const { settings } = useSettings();
@@ -278,15 +278,28 @@ export default function OrdersAdminPage() {
     }, [filteredOrders]);
 
     const { paginatedActiveOrders, totalActivePages } = useMemo(() => {
-        const total = Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
+        // Se temos o totalOrdersCount e não estamos filtrando, usamos ele para o cálculo real
+        const isFiltering = filters.search || filters.status !== 'all' || filters.seller !== 'all' || filters.month || filters.year || filters.showOverdue || filters.showOnTime || filters.showPaidOff || filters.dueDateRange !== 'all';
+
+        let total;
+        if (!isFiltering && totalOrdersCount !== null) {
+            // Estima o total de páginas baseado no contador real do banco (apenas para ativos)
+            // Como totalOrdersCount inclui excluídos, o ideal seria ter um count específico por status.
+            // Por enquanto, usamos o activeOrders.length se já tivermos tudo carregado,
+            // ou o totalOrdersCount se ainda estivermos paginando.
+            total = hasMoreOrders ? Math.ceil(totalOrdersCount / ORDERS_PER_PAGE) : Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
+        } else {
+            total = Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
+        }
+
         const paginated = activeOrders.slice((activePage - 1) * ORDERS_PER_PAGE, activePage * ORDERS_PER_PAGE);
-        return { paginatedActiveOrders: paginated, totalActivePages: total };
-    }, [activeOrders, activePage]);
+        return { paginatedActiveOrders: paginated, totalActivePages: Math.max(1, total) };
+    }, [activeOrders, activePage, totalOrdersCount, hasMoreOrders, filters]);
 
     const { paginatedDeletedOrders, totalDeletedPages } = useMemo(() => {
         const total = Math.ceil(deletedOrders.length / ORDERS_PER_PAGE);
         const paginated = deletedOrders.slice((deletedPage - 1) * ORDERS_PER_PAGE, deletedPage * ORDERS_PER_PAGE);
-        return { paginatedDeletedOrders: paginated, totalDeletedPages: total };
+        return { paginatedDeletedOrders: paginated, totalDeletedPages: Math.max(1, total) };
     }, [deletedOrders, deletedPage]);
 
     const handleNextActivePage = async () => {
@@ -810,7 +823,7 @@ Não esqueça de enviar o comprovante!`;
                                                     Anterior
                                                 </Button>
                                                 <span className="text-sm">
-                                                    Página {activePage} de {totalActivePages}{hasMoreOrders ? '+' : ''}
+                                                    Página {activePage} de {totalActivePages}
                                                 </span>
                                                 <Button
                                                     variant="outline"
@@ -823,10 +836,18 @@ Não esqueça de enviar o comprovante!`;
                                             </div>
                                         )}
                                         {(hasMoreOrders || isLoadingMoreOrders) && (
-                                            <div className="flex justify-center mt-4">
-                                                <Button variant="outline" onClick={loadMoreOrders} disabled={!hasMoreOrders || isLoadingMoreOrders}>
-                                                    {isLoadingMoreOrders ? 'Carregando mais pedidos...' : 'Mais pedidos disponíveis'}
-                                                </Button>
+                                            <div className="flex justify-center items-center gap-4 mt-4">
+                                                {hasMoreOrders && !isLoadingMoreOrders && (
+                                                    <Button variant="default" onClick={fetchAllOrders} className="bg-blue-600 hover:bg-blue-700">
+                                                        <PackageSearch className="mr-2 h-4 w-4" />
+                                                        Ver todos os pedidos
+                                                    </Button>
+                                                )}
+                                                {isLoadingMoreOrders && (
+                                                    <Button variant="outline" disabled>
+                                                        Carregando mais pedidos...
+                                                    </Button>
+                                                )}
                                             </div>
                                         )}
                                     </>

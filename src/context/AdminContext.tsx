@@ -70,6 +70,8 @@ interface AdminContextType {
   permanentlyDeleteProduct: (productId: string, logAction: LogAction, user: User | null) => Promise<void>;
   fetchDeletedProducts: () => Promise<Product[]>;
   loadMoreOrders: () => Promise<void>;
+  fetchAllOrders: () => Promise<void>;
+  totalOrdersCount: number | null;
   hasMoreOrders: boolean;
   isLoadingMoreOrders: boolean;
   orders: Order[];
@@ -123,6 +125,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   // Use local state for orders, etc.
   const [orders, setOrders] = useState<Order[]>([]);
   const [ordersNextCursor, setOrdersNextCursor] = useState<string | null>(null);
+  const [totalOrdersCount, setTotalOrdersCount] = useState<number | null>(null);
   const [hasMoreOrders, setHasMoreOrders] = useState(true);
   const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
   const [customers, setCustomers] = useState<CustomerInfo[]>([]);
@@ -169,6 +172,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (ordersRes.status === 'fulfilled' && ordersRes.value.success && ordersRes.value.data) {
       const fresh = ordersRes.value.data as Order[];
       setOrders((prev) => mergeOrdersById(prev, fresh));
+      setTotalOrdersCount(ordersRes.value.totalCount ?? null);
       if (!hasPaginatedOrdersRef.current) {
         setOrdersNextCursor(ordersRes.value.nextCursor || null);
         setHasMoreOrders(!!ordersRes.value.nextCursor);
@@ -216,6 +220,23 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingMoreOrders(false);
     }
   }, [user, hasMoreOrders, ordersNextCursor, isLoadingMoreOrders]);
+
+  const fetchAllOrders = useCallback(async () => {
+    if (!user || isLoadingMoreOrders) return;
+    setIsLoadingMoreOrders(true);
+    try {
+      const res = await fetch('/api/admin/orders?limit=all&includeItems=0', { cache: 'no-store' }).then(r => r.json());
+      if (res.success && res.data) {
+        setOrders(res.data);
+        setHasMoreOrders(false);
+        setOrdersNextCursor(null);
+        setTotalOrdersCount(res.data.length);
+        hasPaginatedOrdersRef.current = true;
+      }
+    } finally {
+      setIsLoadingMoreOrders(false);
+    }
+  }, [user, isLoadingMoreOrders]);
 
   useEffect(() => {
     const tick = async () => {
@@ -698,7 +719,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     saveStockAudit, addAvaria, updateAvaria, deleteAvaria,
     emptyTrash,
     restoreProduct, permanentlyDeleteProduct, fetchDeletedProducts,
-    loadMoreOrders, hasMoreOrders, isLoadingMoreOrders,
+    loadMoreOrders, fetchAllOrders, totalOrdersCount, hasMoreOrders, isLoadingMoreOrders,
     orders, commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
   };
 
