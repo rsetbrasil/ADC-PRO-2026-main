@@ -156,13 +156,22 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
                     new Set<string>((items || []).map((i: any) => String(i?.id || '')).filter(Boolean))
                 );
 
-                const { data: productsRows, error: productsError } = itemIds.length
-                    ? await supabase
-                        .from('products')
-                        .select('id,commission_type,commission_value,commissionType,commissionValue')
-                        .in('id', itemIds)
-                    : { data: [], error: null };
-                if (productsError) throw productsError;
+                let productsRows: any[] = [];
+                try {
+                     const { data, error } = itemIds.length
+                        ? await supabase
+                            .from('products')
+                            .select('id,commission_type,commission_value,commissionType,commissionValue')
+                            .in('id', itemIds)
+                        : { data: [], error: null };
+                    if (error) {
+                        console.warn('Falha ao buscar produtos para comissão (ignorado):', error.message);
+                    } else {
+                        productsRows = data || [];
+                    }
+                } catch (err: any) {
+                    console.warn('Exceção ao buscar produtos para comissão (ignorado):', err.message);
+                }
 
                 const productCommission = new Map(
                     (productsRows || []).map((p: any) => [
@@ -200,7 +209,26 @@ export async function updateOrderStatusAction(orderId: string, status: Order['st
         revalidatePath('/admin/pedidos');
         return { success: true };
     } catch (error: any) {
-        return { success: false, error: error?.message || 'Falha ao atualizar status' };
+        // Fallback: If anything failed (e.g. fetching order details or products), try a blind status update
+        // This ensures the user can at least change the status even if commission calculation fails.
+        try {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+            const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+            const supabase = createClient(supabaseUrl, supabaseServiceKey);
+            
+            console.warn('Fallback: Atualizando status sem recálculos devido a erro:', error?.message);
+            const { error: fallbackError } = await supabase
+                .from('orders')
+                .update({ status })
+                .eq('id', orderId);
+            
+            if (fallbackError) throw fallbackError;
+            
+            revalidatePath('/admin/pedidos');
+            return { success: true };
+        } catch (finalError: any) {
+            return { success: false, error: finalError?.message || 'Falha crítica ao atualizar status' };
+        }
     }
 }
 

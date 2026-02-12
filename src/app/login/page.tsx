@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Shield, Sun, Moon } from 'lucide-react';
+import { Shield, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { Switch } from '@/components/ui/switch';
@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -62,14 +63,24 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
-                <Input
-                id="password"
-                type="password"
-                placeholder="senha"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="senha"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground"
+                    aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                    onClick={() => setShowPassword(v => !v)}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
             </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-2">

@@ -12,13 +12,18 @@ export default function AdminRootPage() {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
 
   useEffect(() => {
-    if (isLoading || permissionsLoading) return;
-    if (!isAuthenticated || !user || !permissions) {
-      router.replace('/login');
+    if (!isAuthenticated || !user) {
+      if (!isLoading) router.replace('/login');
       return;
     }
-
-    const firstAccessible = ALL_SECTIONS.find((s) => hasAccess(user.role, s.id, permissions));
+    if (isLoading || permissionsLoading) {
+      // Fallback: if still loading permissions, go to default section
+      router.replace('/admin/pedidos');
+      return;
+    }
+    const firstAccessible = permissions
+      ? ALL_SECTIONS.find((s) => hasAccess(user.role, s.id, permissions))
+      : undefined;
     router.replace(`/admin/${firstAccessible?.id || 'pedidos'}`);
   }, [router, isLoading, permissionsLoading, isAuthenticated, user, permissions]);
 

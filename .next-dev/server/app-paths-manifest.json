@@ -2,6 +2,8 @@
   "/api/public/products/route": "app/api/public/products/route.js",
   "/api/audit/logs/route": "app/api/audit/logs/route.js",
   "/api/public/categories/route": "app/api/public/categories/route.js",
+  "/api/audit/log/route": "app/api/audit/log/route.js",
   "/admin/pedidos/page": "app/admin/pedidos/page.js",
-  "/login/page": "app/login/page.js"
+  "/login/page": "app/login/page.js",
+  "/admin/page": "app/admin/page.js"
 }

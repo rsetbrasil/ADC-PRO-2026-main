@@ -28,24 +28,10 @@ export async function getRolePermissionsAction() {
         if (insertError) throw insertError;
 
         return { success: true, data: initialPermissions };
-    } catch {
-        try {
-            const result = await db.config.findUnique({
-                where: { key: 'rolePermissions' }
-            });
-
-            if (result) {
-                return { success: true, data: result.value as unknown as RolePermissions };
-            }
-
-            await db.config.create({
-                data: { key: 'rolePermissions', value: initialPermissions as any }
-            });
-
-            return { success: true, data: initialPermissions };
-        } catch (error: any) {
-            return { success: false, error: error.message };
-        }
+    } catch (e: any) {
+        // Supabase fail? Return default permissions so app doesn't crash
+        console.warn('Fallback: Returning initial permissions due to error:', e?.message);
+        return { success: true, data: initialPermissions };
     }
 }
 

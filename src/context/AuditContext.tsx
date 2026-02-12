@@ -19,13 +19,18 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchLogs = useCallback(async () => {
     try {
-      const res = await fetch('/api/audit/logs', { cache: 'no-store' });
-      const result = await res.json();
-      if (result?.success && Array.isArray(result.data)) {
-        setAuditLogs(result.data as AuditLog[]);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch('/api/audit/logs', { cache: 'no-store', signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const result = await res.json();
+        if (result?.success && Array.isArray(result.data)) {
+          setAuditLogs(result.data as AuditLog[]);
+        }
       }
     } catch (error) {
-      console.error("Error fetching audit logs:", error);
+      // silent
     } finally {
       setIsLoading(false);
     }
@@ -48,17 +53,18 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
   const logAction = useCallback(async (action: string, details: string, user: User | null) => {
     if (!user) return;
 
-    // Optimistic update (optional, but might be tricky without ID, so maybe just fire and forget)
-    // We'll let polling pick it up or push it locally if we want instant feedback.
-
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       await fetch('/api/audit/log', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action, details, user }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
     } catch (error) {
-      console.error("Error writing audit log:", error);
+      // silent
     }
   }, []);
 

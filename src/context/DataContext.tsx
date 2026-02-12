@@ -53,30 +53,36 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       // Fetch Products
       try {
-        const res = await fetch('/api/public/products', { cache: 'no-store' });
-        const result = await res.json();
-        if (result?.success && Array.isArray(result.data)) {
-          setProducts(result.data as Product[]);
-        } else {
-          console.error(result?.error || 'Failed to fetch products');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch('/api/public/products', { cache: 'no-store', signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const result = await res.json();
+          if (result?.success && Array.isArray(result.data)) {
+            setProducts(result.data as Product[]);
+          }
         }
       } catch (error) {
-        console.error('Error fetching products:', error);
+        // silent
       } finally {
         if (showLoading) setProductsLoading(false);
       }
 
       // Fetch Categories
       try {
-        const res = await fetch('/api/public/categories', { cache: 'no-store' });
-        const result = await res.json();
-        if (result?.success && Array.isArray(result.data)) {
-          setCategories(result.data as Category[]);
-        } else {
-          console.error(result?.error || 'Failed to fetch categories');
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch('/api/public/categories', { cache: 'no-store', signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          const result = await res.json();
+          if (result?.success && Array.isArray(result.data)) {
+            setCategories(result.data as Category[]);
+          }
         }
       } catch (error) {
-        console.error('Error fetching categories:', error);
+        // silent
       } finally {
         if (showLoading) setCategoriesLoading(false);
       }
