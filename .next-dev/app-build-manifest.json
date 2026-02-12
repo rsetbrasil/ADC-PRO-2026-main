@@ -107,6 +107,12 @@
       "static/chunks/main-app.js",
       "static/css/app/admin/criar-pedido/page.css",
       "static/chunks/app/admin/criar-pedido/page.js"
+    ],
+    "/admin/clientes/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/admin/clientes/page.css",
+      "static/chunks/app/admin/clientes/page.js"
     ]
   }
 }

@@ -50,6 +50,7 @@ export async function GET(req: Request) {
     const includeItemsRaw = String(searchParams.get('includeItems') || '').toLowerCase();
     const includeItems = includeItemsRaw === '1' || includeItemsRaw === 'true';
     const id = searchParams.get('id');
+    const searchTerm = searchParams.get('search')?.toLowerCase() || null;
 
     const defaultLimit = includeItems ? 40 : 20;
     const maxLimit = includeItems ? 60 : 40;
@@ -58,7 +59,7 @@ export async function GET(req: Request) {
     const limit = isFetchAll ? 10000 : (Number.isFinite(requestedLimit) ? Math.min(Math.max(requestedLimit, 10), maxLimit) : defaultLimit);
     const cursor = searchParams.get('cursor');
 
-    const cacheKey = id ? `id:${id}:items:${includeItems ? 1 : 0}` : `list:${isFetchAll ? 'all' : limit}:${cursor || ''}:items:${includeItems ? 1 : 0}`;
+    const cacheKey = id ? `id:${id}:items:${includeItems ? 1 : 0}` : `list:${isFetchAll ? 'all' : limit}:${cursor || ''}:items:${includeItems ? 1 : 0}:search:${searchTerm || ''}`;
     const hit = cacheState.hotCache.get(cacheKey);
     if (hit && now - hit.at < HOT_TTL_MS) {
       const res = NextResponse.json({ success: true, data: hit.data, source: hit.source, cursor: cursor || null });
@@ -124,18 +125,51 @@ export async function GET(req: Request) {
       : 'id,customer,items,total,discount,downPayment,installments,installmentValue,date,firstDueDate,status,paymentMethod,installmentDetails,sellerId,sellerName,commission,commissionPaid,isCommissionManual,source,created_at,updated_at';
 
     const work = (async () => {
-      const countRes = !cursor ? await supabase.from('orders').select('id', { count: 'exact', head: true }) : null;
+      const countRes = !cursor && !searchTerm ? await supabase.from('orders').select('id', { count: 'exact', head: true }) : null;
       const totalCount = countRes?.count || null;
 
-      if (isFetchAll) {
-        const { data, error } = await supabase
-          .from('orders')
-          .select(selectList)
-          .order('date', { ascending: false })
-          .order('id', { ascending: false });
+      if (searchTerm) {
+         // Busca global no banco de dados (limitada a 100 resultados por busca para performance)
+         const { data, error } = await supabase
+           .from('orders')
+           .select(selectList)
+           .or(`id.ilike.%${searchTerm}%,customer->>name.ilike.%${searchTerm}%,customer->>cpf.ilike.%${searchTerm}%`)
+           .order('date', { ascending: false })
+           .limit(100);
 
-        if (error) throw error;
-        const mapped = (data || []).map(mapDbOrderToOrder);
+         if (error) throw error;
+         const mapped = (data || []).map(mapDbOrderToOrder);
+         const entry: CacheEntry = { at: now, data: mapped, source: 'search' };
+         return { entry, nextCursor: null, totalCount: mapped.length };
+       }
+
+      if (isFetchAll) {
+        let allData = [];
+        let lastId = null;
+        let hasMore = true;
+        
+        while (hasMore) {
+          let query = supabase
+            .from('orders')
+            .select(selectList)
+            .order('id', { ascending: true })
+            .limit(1000);
+            
+          if (lastId) query = query.gt('id', lastId);
+          
+          const { data, error } = await query;
+          if (error) throw error;
+          
+          if (!data || data.length === 0) {
+            hasMore = false;
+          } else {
+            allData = allData.concat(data);
+            lastId = data[data.length - 1].id;
+            if (data.length < 1000) hasMore = false;
+          }
+        }
+
+        const mapped = allData.map(mapDbOrderToOrder);
         const entry: CacheEntry = { at: now, data: mapped, source: 'all' };
         return { entry, nextCursor: null, totalCount: mapped.length };
       }

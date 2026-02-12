@@ -118,7 +118,7 @@ const months = [
 
 export default function OrdersAdminPage() {
     const { updateOrderStatus, recordInstallmentPayment, updateOrderDetails, updateInstallmentDueDate, deleteOrder, permanentlyDeleteOrder, reversePayment, emptyTrash, updateInstallmentAmount } = useAdmin();
-    const { orders, customers, loadMoreOrders, fetchAllOrders, totalOrdersCount, hasMoreOrders, isLoadingMoreOrders } = useAdminData();
+    const { orders, customers, loadMoreOrders, fetchAllOrders, searchOrders, totalOrdersCount, hasMoreOrders, isLoadingMoreOrders, isSearching } = useAdminData();
     const { products } = useData();
     const { user, users } = useAuth();
     const { settings } = useSettings();
@@ -147,6 +147,17 @@ export default function OrdersAdminPage() {
     const [activePage, setActivePage] = useState(1);
     const [deletedPage, setDeletedPage] = useState(1);
     const [viewedOrders, setViewedOrders] = useState<Set<string>>(new Set());
+    const [localSearch, setLocalSearch] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            if (localSearch.length >= 2 || localSearch === '') {
+                searchOrders(localSearch);
+                setActivePage(1);
+            }
+        }, 500);
+        return () => clearTimeout(handler);
+    }, [localSearch, searchOrders]);
 
     useEffect(() => {
         const stored = localStorage.getItem('viewedOrders');
@@ -204,11 +215,17 @@ export default function OrdersAdminPage() {
         if (!orders) return [];
 
         return orders.filter(o => {
-            const searchTerm = filters.search.toLowerCase();
+            // Se houver uma busca local, o backend já filtrou, mas mantemos aqui por segurança e para filtros adicionais
+            const searchTerm = localSearch.toLowerCase();
             const searchMatch = !searchTerm ||
                 o.id.toLowerCase().includes(searchTerm) ||
                 o.customer.name.toLowerCase().includes(searchTerm) ||
                 (o.customer.code || '').toLowerCase().includes(searchTerm);
+
+            // Se estiver em modo de busca global, ignoramos filtros de data/status que podem ocultar o resultado
+            if (searchTerm.length >= 2) {
+                return searchMatch;
+            }
 
             const statusMatch = filters.status === 'all' || o.status === filters.status;
 
@@ -385,6 +402,9 @@ export default function OrdersAdminPage() {
             month: '',
             year: '',
         });
+        setLocalSearch('');
+        setActivePage(1);
+        setDeletedPage(1);
     };
 
     useEffect(() => {
@@ -587,12 +607,19 @@ Não esqueça de enviar o comprovante!`;
                             </TabsList>
                             <TabsContent value="active">
                                 <div className="flex flex-wrap gap-4 mb-6 p-4 border rounded-lg bg-muted/50">
-                                    <div className="flex-grow min-w-[200px]">
+                                    <div className="flex-grow min-w-[300px] relative">
+                                        <PackageSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                         <Input
-                                            placeholder="Buscar por ID, cliente ou código..."
-                                            value={filters.search}
-                                            onChange={(e) => handleFilterChange('search', e.target.value)}
+                                            placeholder="Buscar pedido por ID, nome ou código do cliente..."
+                                            value={localSearch}
+                                            onChange={(e) => setLocalSearch(e.target.value)}
+                                            className="pl-9"
                                         />
+                                        {isSearching && (
+                                            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex-grow min-w-[150px]">
                                         <Select value={filters.status} onValueChange={(value) => handleFilterChange('status', value)}>

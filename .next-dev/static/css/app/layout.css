@@ -1181,6 +1181,9 @@ video {
 .min-w-\[var\(--radix-select-trigger-width\)\] {
   min-width: var(--radix-select-trigger-width);
 }
+.min-w-\[300px\] {
+  min-width: 300px;
+}
 .max-w-4xl {
   max-width: 56rem;
 }
@@ -1308,6 +1311,15 @@ video {
 }
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes spin {
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
 .cursor-default {
   cursor: default;
@@ -2017,6 +2029,9 @@ video {
 }
 .pt-6 {
   padding-top: 1.5rem;
+}
+.pl-9 {
+  padding-left: 2.25rem;
 }
 .text-left {
   text-align: left;

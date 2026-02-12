@@ -74,6 +74,8 @@ interface AdminContextType {
   totalOrdersCount: number | null;
   hasMoreOrders: boolean;
   isLoadingMoreOrders: boolean;
+  isSearching: boolean;
+  searchOrders: (query: string) => Promise<void>;
   orders: Order[];
   commissionPayments: CommissionPayment[];
   stockAudits: StockAudit[];
@@ -128,6 +130,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [totalOrdersCount, setTotalOrdersCount] = useState<number | null>(null);
   const [hasMoreOrders, setHasMoreOrders] = useState(true);
   const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [customers, setCustomers] = useState<CustomerInfo[]>([]);
   const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
   const [stockAudits, setStockAudits] = useState<StockAudit[]>([]);
@@ -237,6 +240,28 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       setIsLoadingMoreOrders(false);
     }
   }, [user, isLoadingMoreOrders]);
+
+  const searchOrders = useCallback(async (query: string) => {
+    if (!user) return;
+    if (!query || query.length < 2) {
+      // Se a busca for limpa, recarrega os dados iniciais
+      fetchData();
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/admin/orders?search=${encodeURIComponent(query)}&includeItems=0`, { cache: 'no-store' }).then(r => r.json());
+      if (res.success && res.data) {
+        setOrders(res.data);
+        setHasMoreOrders(false); // Busca global não tem paginação simples
+        setOrdersNextCursor(null);
+        // Não atualizamos o totalOrdersCount para não quebrar a paginação normal quando limpar a busca
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, [user, fetchData]);
 
   useEffect(() => {
     const tick = async () => {
@@ -719,8 +744,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     saveStockAudit, addAvaria, updateAvaria, deleteAvaria,
     emptyTrash,
     restoreProduct, permanentlyDeleteProduct, fetchDeletedProducts,
-    loadMoreOrders, fetchAllOrders, totalOrdersCount, hasMoreOrders, isLoadingMoreOrders,
-    orders, commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
+    loadMoreOrders, fetchAllOrders, totalOrdersCount, hasMoreOrders,
+      isLoadingMoreOrders,
+      isSearching,
+      searchOrders,
+      orders,
+      commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
   };
 
   return (
