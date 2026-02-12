@@ -8,7 +8,14 @@ node_modules
 
 # Next.js
 /.next/
+/.next-dev/
 /out/
+
+# Scripts de Fix Temporários
+fix-migrated-dates.js
+investigate-db.js
+search-specific-customer.js
+test-backend-search.js
 
 # Production
 /build
