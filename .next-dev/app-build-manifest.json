@@ -101,6 +101,12 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/page.js"
+    ],
+    "/admin/criar-pedido/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/css/app/admin/criar-pedido/page.css",
+      "static/chunks/app/admin/criar-pedido/page.js"
     ]
   }
 }

@@ -127,6 +127,19 @@ export async function GET(req: Request) {
       const countRes = !cursor ? await supabase.from('orders').select('id', { count: 'exact', head: true }) : null;
       const totalCount = countRes?.count || null;
 
+      if (isFetchAll) {
+        const { data, error } = await supabase
+          .from('orders')
+          .select(selectList)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false });
+
+        if (error) throw error;
+        const mapped = (data || []).map(mapDbOrderToOrder);
+        const entry: CacheEntry = { at: now, data: mapped, source: 'all' };
+        return { entry, nextCursor: null, totalCount: mapped.length };
+      }
+
       const parseCursor = (raw: string | null) => {
         if (!raw) return { date: null as string | null, id: null as string | null };
         const s = String(raw);

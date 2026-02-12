@@ -293,13 +293,22 @@ export default function OrdersAdminPage() {
         // Se temos o totalOrdersCount e não estamos filtrando, usamos ele para o cálculo real
         const isFiltering = filters.search || filters.status !== 'all' || filters.seller !== 'all' || filters.month || filters.year || filters.showOverdue || filters.showOnTime || filters.showPaidOff || filters.dueDateRange !== 'all';
 
+        // Se o usuário clicou em "Ver todos os pedidos", hasMoreOrders será false e orders terá todos os dados.
+        // Mas o usuário prefere manter a paginação de 20 em 20 mesmo com tudo carregado.
+        const isShowAllMode = false; // Desativado para manter 20 por página conforme pedido
+
+        if (isShowAllMode) {
+            return { paginatedActiveOrders: activeOrders, totalActivePages: 1 };
+        }
+
         let total;
         if (!isFiltering && totalOrdersCount !== null) {
             // Estima o total de páginas baseado no contador real do banco (apenas para ativos)
-            // Como totalOrdersCount inclui excluídos, o ideal seria ter um count específico por status.
-            // Por enquanto, usamos o activeOrders.length se já tivermos tudo carregado,
-            // ou o totalOrdersCount se ainda estivermos paginando.
-            total = hasMoreOrders ? Math.ceil(totalOrdersCount / ORDERS_PER_PAGE) : Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
+            // Como totalOrdersCount inclui excluídos, garantimos que a contagem seja ao menos 
+            // o que já temos carregado.
+            const pagesFromDb = Math.ceil(totalOrdersCount / ORDERS_PER_PAGE);
+            const pagesFromLoaded = Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
+            total = Math.max(pagesFromDb, pagesFromLoaded);
         } else {
             total = Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
         }
@@ -309,10 +318,14 @@ export default function OrdersAdminPage() {
     }, [activeOrders, activePage, totalOrdersCount, hasMoreOrders, filters]);
 
     const { paginatedDeletedOrders, totalDeletedPages } = useMemo(() => {
+        const isShowAllMode = false; // Desativado para manter 20 por página
+        if (isShowAllMode) {
+            return { paginatedDeletedOrders: deletedOrders, totalDeletedPages: 1 };
+        }
         const total = Math.ceil(deletedOrders.length / ORDERS_PER_PAGE);
         const paginated = deletedOrders.slice((deletedPage - 1) * ORDERS_PER_PAGE, deletedPage * ORDERS_PER_PAGE);
         return { paginatedDeletedOrders: paginated, totalDeletedPages: Math.max(1, total) };
-    }, [deletedOrders, deletedPage]);
+    }, [deletedOrders, deletedPage, hasMoreOrders, totalOrdersCount, orders.length]);
 
     const handleNextActivePage = async () => {
         if (activePage < totalActivePages) {
@@ -841,22 +854,33 @@ Não esqueça de enviar o comprovante!`;
                                                 </TableBody>
                                             </Table>
                                         </div>
-                                        {totalActivePages > 1 && (
-                                            <div className="flex justify-end items-center gap-2 mt-4">
-                                                <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.max(1, p - 1))} disabled={activePage === 1}>
-                                                    Anterior
-                                                </Button>
-                                                <span className="text-sm">
-                                                    Página {activePage} de {totalActivePages}
-                                                </span>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={handleNextActivePage}
-                                                    disabled={(activePage === totalActivePages && !hasMoreOrders) || isLoadingMoreOrders}
-                                                >
-                                                    Próxima
-                                                </Button>
+                                        {totalActivePages > 0 && (
+                                             <div className="flex justify-between items-center gap-2 mt-4">
+                                                 <div className="text-sm text-muted-foreground">
+                                                     {!hasMoreOrders ? (
+                                                         `Mostrando todos os ${activeOrders.length} pedidos ativos`
+                                                     ) : (
+                                                         `Mostrando ${paginatedActiveOrders.length} de ${activeOrders.length} pedidos carregados (total no banco: ${totalOrdersCount || '...'})`
+                                                     )}
+                                                 </div>
+                                                 {totalActivePages > 1 && (
+                                                    <div className="flex items-center gap-2">
+                                                        <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.max(1, p - 1))} disabled={activePage === 1}>
+                                                            Anterior
+                                                        </Button>
+                                                        <span className="text-sm">
+                                                            Página {activePage} de {totalActivePages}
+                                                        </span>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={handleNextActivePage}
+                                                            disabled={(activePage === totalActivePages && !hasMoreOrders) || isLoadingMoreOrders}
+                                                        >
+                                                            Próxima
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         {(hasMoreOrders || isLoadingMoreOrders) && (
@@ -988,22 +1012,33 @@ Não esqueça de enviar o comprovante!`;
                                                 </TableBody>
                                             </Table>
                                         </div>
-                                        {totalDeletedPages > 1 && (
-                                            <div className="flex justify-end items-center gap-2 mt-4">
-                                                <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.max(1, p - 1))} disabled={deletedPage === 1}>
-                                                    Anterior
-                                                </Button>
-                                                <span className="text-sm">
-                                                    Página {deletedPage} de {totalDeletedPages}
-                                                </span>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={handleNextDeletedPage}
-                                                    disabled={(deletedPage === totalDeletedPages && !hasMoreOrders) || isLoadingMoreOrders}
-                                                >
-                                                    Próxima
-                                                </Button>
+                                        {totalDeletedPages > 0 && (
+                                             <div className="flex justify-between items-center gap-2 mt-4">
+                                                 <div className="text-sm text-muted-foreground">
+                                                     {!hasMoreOrders ? (
+                                                         `Mostrando todos os ${deletedOrders.length} pedidos excluídos`
+                                                     ) : (
+                                                         `Mostrando ${paginatedDeletedOrders.length} de ${deletedOrders.length} pedidos excluídos carregados`
+                                                     )}
+                                                 </div>
+                                                 {totalDeletedPages > 1 && (
+                                                    <div className="flex items-center gap-2">
+                                                        <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.max(1, p - 1))} disabled={deletedPage === 1}>
+                                                            Anterior
+                                                        </Button>
+                                                        <span className="text-sm">
+                                                            Página {deletedPage} de {totalDeletedPages}
+                                                        </span>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={handleNextDeletedPage}
+                                                            disabled={(deletedPage === totalDeletedPages && !hasMoreOrders) || isLoadingMoreOrders}
+                                                        >
+                                                            Próxima
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </>
