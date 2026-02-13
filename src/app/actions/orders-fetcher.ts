@@ -19,22 +19,7 @@ function getSupabaseAdmin() {
 }
 
 export async function getOrderForCarnetAction(orderId: string) {
-    try {
-        const supabase = getSupabaseAdmin();
-        const { data: orderRecord, error } = await supabase
-            .from('orders')
-            .select('*')
-            .eq('id', orderId)
-            .maybeSingle();
-
-        if (error) throw error;
-        if (!orderRecord) {
-            return { success: false, error: 'Pedido não encontrado' };
-        }
-
-        let order = mapDbOrderToOrder(orderRecord);
-
-        // Populate customer details if missing
+    const hydrateCustomerFromPrisma = async (order: Order): Promise<Order> => {
         const cpf = (order.customer?.cpf || '').replace(/\D/g, '');
         const needsCustomerDetails =
             !order.customer?.code ||
@@ -46,41 +31,71 @@ export async function getOrderForCarnetAction(orderId: string) {
             !order.customer?.state ||
             !order.customer?.zip;
 
-        if (cpf.length === 11 && needsCustomerDetails) {
-            const customerRecord = await db.customer.findFirst({
-                where: { cpf: cpf }
-            });
-
-            if (customerRecord) {
-                // We don't have to parse JSON for Customer model generally, but check type definition if needed.
-                // Assuming Customer model fields map directly or similar logic.
-                // Actually Customer in Prisma: 
-                // model Customer { ... address String? ... } matches types.
-
-                order = {
-                    ...order,
-                    customer: {
-                        ...order.customer,
-                        code: order.customer.code || customerRecord.code || undefined,
-                        phone: order.customer.phone || customerRecord.phone || '',
-                        phone2: order.customer.phone2 || customerRecord.phone2 || undefined,
-                        phone3: order.customer.phone3 || customerRecord.phone3 || undefined,
-                        email: order.customer.email || customerRecord.email || undefined,
-                        address: order.customer.address || customerRecord.address || '',
-                        number: order.customer.number || customerRecord.number || '',
-                        complement: order.customer.complement || customerRecord.complement || undefined,
-                        neighborhood: order.customer.neighborhood || customerRecord.neighborhood || '',
-                        city: order.customer.city || customerRecord.city || '',
-                        state: order.customer.state || customerRecord.state || '',
-                        zip: order.customer.zip || customerRecord.zip || '',
-                    },
-                };
-            }
+        if (cpf.length !== 11 || !needsCustomerDetails) {
+            return order;
         }
+
+        const customerRecord = await db.customer.findFirst({
+            where: { cpf: cpf }
+        });
+
+        if (!customerRecord) {
+            return order;
+        }
+
+        return {
+            ...order,
+            customer: {
+                ...order.customer,
+                code: order.customer.code || customerRecord.code || undefined,
+                phone: order.customer.phone || customerRecord.phone || '',
+                phone2: order.customer.phone2 || customerRecord.phone2 || undefined,
+                phone3: order.customer.phone3 || customerRecord.phone3 || undefined,
+                email: order.customer.email || customerRecord.email || undefined,
+                address: order.customer.address || customerRecord.address || '',
+                number: order.customer.number || customerRecord.number || '',
+                complement: order.customer.complement || customerRecord.complement || undefined,
+                neighborhood: order.customer.neighborhood || customerRecord.neighborhood || '',
+                city: order.customer.city || customerRecord.city || '',
+                state: order.customer.state || customerRecord.state || '',
+                zip: order.customer.zip || customerRecord.zip || '',
+            },
+        };
+    };
+
+    try {
+        const supabase = getSupabaseAdmin();
+        const { data: orderRecord, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (orderRecord) {
+            let order = mapDbOrderToOrder(orderRecord);
+            order = await hydrateCustomerFromPrisma(order);
+            return { success: true, data: order };
+        }
+    } catch (error: any) {
+        console.error("Error fetching order for carnet from Supabase, falling back to Prisma:", error);
+    }
+
+    try {
+        const orderRecord = await db.order.findUnique({
+            where: { id: orderId }
+        });
+
+        if (!orderRecord) {
+            return { success: false, error: 'Pedido não encontrado' };
+        }
+
+        let order = mapDbOrderToOrder(orderRecord);
+        order = await hydrateCustomerFromPrisma(order);
 
         return { success: true, data: order };
     } catch (error: any) {
-        console.error("Error fetching order for carnet:", error);
+        console.error("Error fetching order for carnet from Prisma:", error);
         return { success: false, error: error.message };
     }
 }
