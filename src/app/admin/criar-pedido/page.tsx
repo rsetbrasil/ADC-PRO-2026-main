@@ -411,12 +411,26 @@ export default function CreateOrderPage() {
                 name="customerId"
                 render={({ field }) => (
                   <FormItem className="flex flex-col">
-                    <FormLabel>Cliente</FormLabel>
+                    <div className="flex items-center justify-between gap-2">
+                      <FormLabel>Cliente</FormLabel>
+                      {field.value && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => {
+                            form.setValue('customerId', '', { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+                          }}
+                        >
+                          Limpar
+                        </Button>
+                      )}
+                    </div>
                     <Select
                       open={openCustomerPicker}
                       onOpenChange={(open) => {
                         setOpenCustomerPicker(open);
-                        if (!open) setCustomerSearch('');
                       }}
                       value={field.value}
                       onValueChange={(selectedCustomerId) => {
