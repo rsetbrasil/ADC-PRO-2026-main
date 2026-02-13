@@ -18,18 +18,58 @@ const getSupabaseAdmin = () => {
 
 const onlyDigits = (value?: string) => String(value || '').replace(/\D/g, '');
 
+const mapDbCustomerToCustomerInfo = (c: any): CustomerInfo => ({
+    id: String(c.id),
+    code: c.code || undefined,
+    name: c.name,
+    cpf: c.cpf || undefined,
+    phone: c.phone || '',
+    phone2: c.phone2 || undefined,
+    phone3: c.phone3 || undefined,
+    email: c.email || undefined,
+    zip: c.zip || '',
+    address: c.address || '',
+    number: c.number || '',
+    complement: c.complement || undefined,
+    neighborhood: c.neighborhood || '',
+    city: c.city || '',
+    state: c.state || '',
+    password: c.password || undefined,
+    observations: c.observations || undefined,
+    sellerId: c.seller_id ?? c.sellerId ?? undefined,
+    sellerName: c.seller_name ?? c.sellerName ?? undefined,
+    blocked: !!c.blocked,
+    blockedReason: c.blocked_reason ?? c.blockedReason ?? undefined,
+    rating: c.rating ?? undefined,
+});
+
 export async function addCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
         const supabase = getSupabaseAdmin();
 
-        const id = customerData.id || onlyDigits(customerData.cpf) || randomUUID();
+        const rawId = String(customerData.id || '').trim();
+        const cpfDigits = onlyDigits(customerData.cpf);
+
+        if (cpfDigits) {
+            const { data: existingCustomer, error: existingError } = await supabase
+                .from('customers')
+                .select('*')
+                .eq('cpf', cpfDigits)
+                .maybeSingle();
+            if (existingError) throw existingError;
+            if (existingCustomer?.id) {
+                return { success: false, error: 'Um cliente com este CPF já existe.', existingCustomer: mapDbCustomerToCustomerInfo(existingCustomer) };
+            }
+        }
+
+        const id = (rawId ? rawId : null) || cpfDigits || randomUUID();
         const code = customerData.code || `CLI-${Date.now()}`;
 
         const { error } = await supabase.from('customers').insert({
             id,
             code,
             name: customerData.name,
-            cpf: customerData.cpf || null,
+            cpf: cpfDigits || null,
             phone: customerData.phone || '',
             phone2: customerData.phone2 || null,
             phone3: customerData.phone3 || null,
@@ -54,7 +94,31 @@ export async function addCustomerAction(customerData: CustomerInfo, user: User |
         revalidatePath('/admin/clientes');
         return { success: true, id };
     } catch (error: any) {
-        return { success: false, error: error?.message || 'Falha ao criar cliente' };
+        const code = String(error?.code || '');
+        const message = String(error?.message || '');
+        if (code === '23505' || message.includes('customers_pkey') || message.toLowerCase().includes('duplicate key')) {
+            try {
+                const supabase = getSupabaseAdmin();
+                const rawId = String(customerData.id || '').trim();
+                const cpfDigits = onlyDigits(customerData.cpf);
+
+                if (cpfDigits) {
+                    const { data } = await supabase.from('customers').select('*').eq('cpf', cpfDigits).maybeSingle();
+                    if (data?.id) {
+                        return { success: false, error: 'Um cliente com este CPF já existe.', existingCustomer: mapDbCustomerToCustomerInfo(data) };
+                    }
+                }
+                if (rawId) {
+                    const { data } = await supabase.from('customers').select('*').eq('id', rawId).maybeSingle();
+                    if (data?.id) {
+                        return { success: false, error: 'Já existe um cliente com este ID.', existingCustomer: mapDbCustomerToCustomerInfo(data) };
+                    }
+                }
+            } catch {
+            }
+            return { success: false, error: 'Já existe um cliente com este CPF ou ID.' };
+        }
+        return { success: false, error: message || 'Falha ao criar cliente' };
     }
 }
 
@@ -100,13 +164,14 @@ export async function getCustomersAction() {
 export async function updateCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
         const supabase = getSupabaseAdmin();
+        const cpfDigits = onlyDigits(customerData.cpf);
 
         const { error } = await supabase
             .from('customers')
             .update({
                 code: customerData.code || null,
                 name: customerData.name,
-                cpf: customerData.cpf || null,
+                cpf: cpfDigits || null,
                 phone: customerData.phone || '',
                 phone2: customerData.phone2 || null,
                 phone3: customerData.phone3 || null,

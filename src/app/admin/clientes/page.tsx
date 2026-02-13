@@ -524,14 +524,29 @@ function CustomersAdminPageInner() {
         const existingCustomer = customers.find(c => c.cpf && customerData.cpf && c.cpf.replace(/\D/g, '') === customerData.cpf.replace(/\D/g, ''));
         if (existingCustomer) {
             toast({ title: 'Erro', description: 'Um cliente com este CPF já existe.', variant: 'destructive' });
+            setActiveTab(existingCustomer.blocked ? 'blocked' : 'active');
+            setSearchQuery(customerData.cpf ? customerData.cpf.replace(/\D/g, '') : existingCustomer.name);
+            setSelectedCustomer(existingCustomer);
+            setIsAddCustomerDialogOpen(false);
             return;
         }
 
         const selectedSeller = users.find((u) => u.id === newCustomerSellerId) || user;
         const customerSellerId = customerData.sellerId ?? selectedSeller.id;
         const customerSellerName = customerData.sellerName ?? selectedSeller.name;
-        await addCustomer({ ...customerData, sellerId: customerSellerId, sellerName: customerSellerName }, logAction, user);
-        setIsAddCustomerDialogOpen(false);
+        const res = await addCustomer({ ...customerData, sellerId: customerSellerId, sellerName: customerSellerName }, logAction, user);
+        if (res?.success) {
+            setIsAddCustomerDialogOpen(false);
+            return;
+        }
+
+        const existingFromServer = res?.existingCustomer as CustomerInfo | undefined;
+        if (existingFromServer?.id) {
+            setActiveTab(existingFromServer.blocked ? 'blocked' : 'active');
+            setSearchQuery(existingFromServer.cpf ? existingFromServer.cpf.replace(/\D/g, '') : existingFromServer.name);
+            setSelectedCustomer(existingFromServer);
+            setIsAddCustomerDialogOpen(false);
+        }
     };
 
     const handleSendWhatsAppReminder = (order: Order, installment: Installment) => {

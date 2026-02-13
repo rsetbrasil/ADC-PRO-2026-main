@@ -26,7 +26,7 @@ type LogAction = (action: string, details: string, user: User | null) => void;
 
 interface AdminContextType {
   addOrder: (order: Partial<Order> & { firstDueDate: Date }, logAction: LogAction, user: User | null) => Promise<Order | null>;
-  addCustomer: (customerData: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
+  addCustomer: (customerData: CustomerInfo, logAction: LogAction, user: User | null) => Promise<any>;
   generateCustomerCodes: (logAction: LogAction, user: User | null) => Promise<{ newCustomers: number; updatedOrders: number }>;
   deleteOrder: (orderId: string, logAction: LogAction, user: User | null) => Promise<void>;
   permanentlyDeleteOrder: (orderId: string, logAction: LogAction, user: User | null) => Promise<void>;
@@ -160,6 +160,19 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     return Array.from(byId.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   };
 
+  const mergeCustomersById = (prev: CustomerInfo[], fresh: CustomerInfo[]) => {
+    const byId = new Map<string, CustomerInfo>();
+    for (const c of prev) {
+      if (c?.id) byId.set(c.id, c);
+    }
+    for (const c of fresh) {
+      if (!c?.id) continue;
+      const current = byId.get(c.id);
+      byId.set(c.id, current ? ({ ...current, ...c } as CustomerInfo) : c);
+    }
+    return Array.from(byId.values()).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+  };
+
   // Polling Function
   const fetchData = useCallback(async () => {
     if (!user) return;
@@ -182,7 +195,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     if (customersRes.status === 'fulfilled' && customersRes.value.success && customersRes.value.data) {
-      setCustomers(customersRes.value.data);
+      setCustomers((prev) => mergeCustomersById(prev, customersRes.value.data));
     }
     if (commRes.status === 'fulfilled' && commRes.value.success && commRes.value.data) {
       setCommissionPayments(commRes.value.data);
@@ -446,11 +459,20 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const res = await addCustomerAction(customerData, user);
     if (res.success) {
       logAction('Cliente Adicionado', `Cliente ${customerData.name} adicionado.`, user);
-      // Add to local state
-      setCustomers(prev => [...prev, customerData]);
+      const id = (res as any).id as string | undefined;
+      setCustomers(prev => [...prev, { ...customerData, ...(id ? { id } : {}) }]);
     } else {
+      const existingCustomer = (res as any).existingCustomer as CustomerInfo | undefined;
+      if (existingCustomer?.id) {
+        setCustomers((prev) => {
+          const exists = prev.some((c) => c.id === existingCustomer.id);
+          if (exists) return prev;
+          return [...prev, existingCustomer].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+        });
+      }
       toast({ title: "Erro", description: res.error, variant: 'destructive' });
     }
+    return res;
   };
 
   // Partial implementations for complex logic
