@@ -74,11 +74,14 @@ export async function getOrderForCarnetAction(orderId: string) {
         if (error) throw error;
         if (orderRecord) {
             let order = mapDbOrderToOrder(orderRecord);
-            order = await hydrateCustomerFromPrisma(order);
+            try {
+                order = await hydrateCustomerFromPrisma(order);
+            } catch {
+            }
             return { success: true, data: order };
         }
     } catch (error: any) {
-        console.error("Error fetching order for carnet from Supabase, falling back to Prisma:", error);
+        console.error("Error fetching order for carnet from Supabase:", error);
     }
 
     try {
@@ -91,7 +94,10 @@ export async function getOrderForCarnetAction(orderId: string) {
         }
 
         let order = mapDbOrderToOrder(orderRecord);
-        order = await hydrateCustomerFromPrisma(order);
+        try {
+            order = await hydrateCustomerFromPrisma(order);
+        } catch {
+        }
 
         return { success: true, data: order };
     } catch (error: any) {
