@@ -18,7 +18,7 @@ import { saveStockAuditAction, addAvariaAction, updateAvariaAction, deleteAvaria
 import { createOrderAction } from '@/app/actions/checkout';
 import { getProductsAction } from '@/app/actions/data';
 import { resetOrdersAction, resetProductsAction, resetFinancialsAction, resetAllAdminDataAction, importProductsAction, importCustomersAction, emptyTrashAction, restoreProductAction, permanentlyDeleteProductWithIdAction, fetchDeletedProductsAction } from '@/app/actions/admin/system';
-import { addCustomerAction, updateCustomerAction, deleteCustomerAction, generateCustomerCodesAction } from '@/app/actions/admin/customers';
+import { addCustomerAction, updateCustomerAction, deleteCustomerAction, generateCustomerCodesAction, permanentlyDeleteCustomerAction, findCustomersAction } from '@/app/actions/admin/customers';
 import { payCommissionAction, reverseCommissionPaymentAction } from '@/app/actions/admin/financials';
 import { addCategoryAction, deleteCategoryAction, updateCategoryNameAction, addSubcategoryAction, updateSubcategoryAction, deleteSubcategoryAction } from '@/app/actions/admin/categories';
 
@@ -37,6 +37,7 @@ interface AdminContextType {
   updateInstallmentAmount: (orderId: string, installmentNumber: number, newAmount: number, logAction: LogAction, user: User | null) => Promise<void>;
   updateCustomer: (oldCustomer: CustomerInfo, updatedCustomerData: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   deleteCustomer: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
+  permanentlyDeleteCustomer: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   restoreCustomerFromTrash: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   permanentlyDeleteCustomerFromTrash: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   importCustomers: (csvData: string, logAction: LogAction, user: User | null) => Promise<void>;
@@ -76,6 +77,7 @@ interface AdminContextType {
   isLoadingMoreOrders: boolean;
   isSearching: boolean;
   searchOrders: (query: string) => Promise<void>;
+  searchCustomers: (query: string) => Promise<void>;
   orders: Order[];
   commissionPayments: CommissionPayment[];
   stockAudits: StockAudit[];
@@ -132,6 +134,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [isLoadingMoreOrders, setIsLoadingMoreOrders] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [customers, setCustomers] = useState<CustomerInfo[]>([]);
+  const [customersFetchBust, setCustomersFetchBust] = useState<number>(0);
   const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
   const [stockAudits, setStockAudits] = useState<StockAudit[]>([]);
   const [avarias, setAvarias] = useState<Avaria[]>([]);
@@ -179,7 +182,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
     const [ordersRes, customersRes, commRes, auditRes, avariaRes] = await Promise.allSettled([
       fetch('/api/admin/orders?limit=20&includeItems=0', { cache: 'no-store' }).then((r) => r.json()),
-      fetch('/api/admin/customers', { cache: 'no-store' }).then((r) => r.json()),
+      fetch(`/api/admin/customers${customersFetchBust ? `?bust=${customersFetchBust}` : ''}`, { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/commission-payments', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/stock-audits', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/admin/avarias', { cache: 'no-store' }).then((r) => r.json()),
@@ -206,7 +209,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (avariaRes.status === 'fulfilled' && avariaRes.value.success && avariaRes.value.data) {
       setAvarias(avariaRes.value.data);
     }
-  }, [user]);
+  }, [user, customersFetchBust]);
 
   const loadMoreOrders = useCallback(async () => {
     if (!user) return;
@@ -460,7 +463,22 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (res.success) {
       logAction('Cliente Adicionado', `Cliente ${customerData.name} adicionado.`, user);
       const id = (res as any).id as string | undefined;
-      setCustomers(prev => [...prev, { ...customerData, ...(id ? { id } : {}) }]);
+      const toAdd: CustomerInfo = {
+        ...customerData,
+        ...(id ? { id } : {}),
+        ...(customerData.cpf ? { cpf: normalizeCpf(customerData.cpf) } : {}),
+        blocked: !!customerData.blocked,
+      };
+      setCustomers((prev) => mergeCustomersById(prev, [toAdd]));
+      const bust = Date.now();
+      setCustomersFetchBust(bust);
+      try {
+        const fresh = await fetch(`/api/admin/customers?bust=${bust}`, { cache: 'no-store' }).then((r) => r.json());
+        if (fresh?.success && fresh?.data) {
+          setCustomers((prev) => mergeCustomersById(prev, fresh.data));
+        }
+      } catch {
+      }
     } else {
       const existingCustomer = (res as any).existingCustomer as CustomerInfo | undefined;
       if (existingCustomer?.id) {
@@ -566,6 +584,16 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       logAction('Cliente Bloqueado/Excluído', `Cliente ${customer.name} bloqueado/excluído.`, user);
       // Update local state to show as blocked or remove depending on logic (here assume moved to blocked/trash)
       setCustomers(prev => prev.map(c => c.id === customer.id ? { ...c, blocked: true, blockedReason: 'Excluído' } : c));
+    } else {
+      toast({ title: "Erro", description: res.error, variant: 'destructive' });
+    }
+  };
+  const permanentlyDeleteCustomer = async (customer: CustomerInfo, logAction: LogAction, user: User | null) => {
+    const res = await permanentlyDeleteCustomerAction(customer.id, user);
+    if (res.success) {
+      logAction('Cliente Excluído Permanentemente', `Cliente ${customer.name} excluído permanentemente.`, user);
+      setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+      toast({ title: 'Cliente excluído', description: 'O cliente foi removido permanentemente.', variant: 'destructive' });
     } else {
       toast({ title: "Erro", description: res.error, variant: 'destructive' });
     }
@@ -779,6 +807,18 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     hasPaginatedOrdersRef.current = false;
   };
 
+  const searchCustomers = useCallback(async (query: string) => {
+    if (!query || query.length < 3) return;
+    try {
+        const res = await findCustomersAction(query);
+        if (res.success && res.data && res.data.length > 0) {
+            setCustomers(prev => mergeCustomersById(prev, res.data));
+        }
+    } catch (error) {
+        console.error('Error searching customers:', error);
+    }
+  }, []);
+
   // Computed
   const customersForUI = useMemo(() => customers, [customers]);
   const customerOrders = useMemo(() => {
@@ -829,7 +869,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const commissionSummary = useMemo(() => ({ totalPendingCommission: 0, commissionsBySeller: [] }), [orders]);
 
   const value = {
-    addOrder, addCustomer, generateCustomerCodes, deleteOrder, permanentlyDeleteOrder, updateOrderStatus, recordInstallmentPayment, reversePayment, updateInstallmentDueDate, updateInstallmentAmount, updateCustomer, deleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, importCustomers, updateOrderDetails,
+    addOrder, addCustomer, generateCustomerCodes, deleteOrder, permanentlyDeleteOrder, updateOrderStatus, recordInstallmentPayment, reversePayment, updateInstallmentDueDate, updateInstallmentAmount, updateCustomer, deleteCustomer, permanentlyDeleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, importCustomers, updateOrderDetails,
     addProduct, updateProduct, deleteProduct, importProducts,
     addCategory, deleteCategory, updateCategoryName, addSubcategory, updateSubcategory, deleteSubcategory, moveCategory, reorderSubcategories, moveSubcategory,
     payCommissions, reverseCommissionPayment,
@@ -841,6 +881,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       isLoadingMoreOrders,
       isSearching,
       searchOrders,
+      searchCustomers,
       orders,
       commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
   };

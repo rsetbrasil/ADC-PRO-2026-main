@@ -97,7 +97,7 @@ const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<s
 
 function CustomersAdminPageInner() {
     const { products } = useData();
-    const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addCustomer, deleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, updateOrderStatus, generateCustomerCodes, deleteOrder } = useAdmin();
+    const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addCustomer, deleteCustomer, permanentlyDeleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, updateOrderStatus, generateCustomerCodes, deleteOrder, searchCustomers } = useAdmin();
     const { customers, customerOrders, customerFinancials, deletedCustomers } = useAdminData();
     const { user, users } = useAuth();
     const { settings } = useSettings();
@@ -154,6 +154,15 @@ function CustomersAdminPageInner() {
         }
     }, [searchParams, customers, router]);
 
+    // Debounced search effect
+    useEffect(() => {
+        if (!searchQuery || searchQuery.length < 3) return;
+        const timer = setTimeout(() => {
+            searchCustomers(searchQuery);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchQuery, searchCustomers]);
+
     const getStatusVariant = (status: Order['status']): 'secondary' | 'default' | 'outline' | 'destructive' => {
         switch (status) {
             case 'Processando':
@@ -183,9 +192,10 @@ function CustomersAdminPageInner() {
         // Then filter by search query if it exists
         if (searchQuery) {
             const lowercasedQuery = searchQuery.toLowerCase();
+            const cleanQuery = lowercasedQuery.replace(/\D/g, '');
             result = result.filter(customer =>
                 customer.name.toLowerCase().includes(lowercasedQuery) ||
-                (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery)) ||
+                (customer.cpf && cleanQuery.length > 0 && customer.cpf.replace(/\D/g, '').includes(cleanQuery)) ||
                 (customer.code && customer.code.toLowerCase().includes(lowercasedQuery))
             );
         }
@@ -198,9 +208,10 @@ function CustomersAdminPageInner() {
         if (!searchQuery) return deletedCustomers;
 
         const lowercasedQuery = searchQuery.toLowerCase();
+        const cleanQuery = lowercasedQuery.replace(/\D/g, '');
         return deletedCustomers.filter(customer =>
             customer.name.toLowerCase().includes(lowercasedQuery) ||
-            (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery)) ||
+            (customer.cpf && cleanQuery.length > 0 && customer.cpf.replace(/\D/g, '').includes(cleanQuery)) ||
             (customer.code && customer.code.toLowerCase().includes(lowercasedQuery))
         );
     }, [deletedCustomers, searchQuery]);
@@ -536,6 +547,15 @@ function CustomersAdminPageInner() {
         const customerSellerName = customerData.sellerName ?? selectedSeller.name;
         const res = await addCustomer({ ...customerData, sellerId: customerSellerId, sellerName: customerSellerName }, logAction, user);
         if (res?.success) {
+            const createdCustomer: CustomerInfo = {
+                ...customerData,
+                id: res?.id || customerData.id,
+                sellerId: customerSellerId,
+                sellerName: customerSellerName,
+            };
+            setActiveTab(createdCustomer.blocked ? 'blocked' : 'active');
+            setSearchQuery('');
+            setSelectedCustomer(createdCustomer);
             setIsAddCustomerDialogOpen(false);
             return;
         }
@@ -578,6 +598,12 @@ Não esqueça de enviar o comprovante!`;
         if (!selectedCustomer || !user) return;
 
         deleteCustomer(selectedCustomer, logAction, user);
+        setSelectedCustomer(null);
+    };
+
+    const handlePermanentDeleteCustomer = async () => {
+        if (!selectedCustomer || !user) return;
+        await permanentlyDeleteCustomer(selectedCustomer, logAction, user);
         setSelectedCustomer(null);
     };
 
@@ -966,6 +992,30 @@ Não esqueça de enviar o comprovante!`;
                                                                 </AlertDialogFooter>
                                                             </AlertDialogContent>
                                                         </AlertDialog>
+                                                        {user?.role === 'admin' && (
+                                                            <AlertDialog>
+                                                                <AlertDialogTrigger asChild>
+                                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-destructive">
+                                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                                        Excluir Permanentemente
+                                                                    </DropdownMenuItem>
+                                                                </AlertDialogTrigger>
+                                                                <AlertDialogContent>
+                                                                    <AlertDialogHeader>
+                                                                        <AlertDialogTitle>Excluir cliente permanentemente?</AlertDialogTitle>
+                                                                        <AlertDialogDescription>
+                                                                            Esta ação remove o cliente <span className="font-bold">{selectedCustomer.name}</span> do sistema e não pode ser desfeita.
+                                                                        </AlertDialogDescription>
+                                                                    </AlertDialogHeader>
+                                                                    <AlertDialogFooter>
+                                                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                                                        <AlertDialogAction onClick={handlePermanentDeleteCustomer} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                                                            Sim, Excluir
+                                                                        </AlertDialogAction>
+                                                                    </AlertDialogFooter>
+                                                                </AlertDialogContent>
+                                                            </AlertDialog>
+                                                        )}
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
                                             )}

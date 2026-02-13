@@ -18,6 +18,12 @@ const getSupabaseAdmin = () => {
 
 const onlyDigits = (value?: string) => String(value || '').replace(/\D/g, '');
 
+function invalidateCustomersApiCache() {
+    if (typeof globalThis !== 'undefined') {
+        (globalThis as any).__adminCustomersApiCache = null;
+    }
+}
+
 const mapDbCustomerToCustomerInfo = (c: any): CustomerInfo => ({
     id: String(c.id),
     code: c.code || undefined,
@@ -42,6 +48,38 @@ const mapDbCustomerToCustomerInfo = (c: any): CustomerInfo => ({
     blockedReason: c.blocked_reason ?? c.blockedReason ?? undefined,
     rating: c.rating ?? undefined,
 });
+
+export async function findCustomersAction(query: string) {
+    try {
+        const supabase = getSupabaseAdmin();
+        const rawQuery = String(query || '').trim();
+        if (!rawQuery) {
+            return { success: true, data: [] as CustomerInfo[] };
+        }
+        const safeQuery = rawQuery.replace(/,/g, ' ');
+        const cleanQuery = rawQuery.replace(/\D/g, '');
+        const cpfLoosePattern = cleanQuery ? `%${cleanQuery.split('').join('%')}%` : '';
+        
+        let queryBuilder = supabase.from('customers').select('*').limit(50);
+
+        if (cleanQuery.length >= 3) {
+            queryBuilder = queryBuilder.or(`cpf.ilike.%${cleanQuery}%,cpf.ilike.%${safeQuery}%,cpf.ilike.${cpfLoosePattern},name.ilike.%${safeQuery}%`);
+        } else {
+            queryBuilder = queryBuilder.ilike('name', `%${safeQuery}%`);
+        }
+
+        const { data, error } = await queryBuilder;
+
+        if (error) throw error;
+
+        return { 
+            success: true, 
+            data: (data || []).map(mapDbCustomerToCustomerInfo) 
+        };
+    } catch (error: any) {
+        return { success: false, error: error.message };
+    }
+}
 
 export async function addCustomerAction(customerData: CustomerInfo, user: User | null) {
     try {
@@ -91,6 +129,7 @@ export async function addCustomerAction(customerData: CustomerInfo, user: User |
         });
         if (error) throw error;
 
+        invalidateCustomersApiCache();
         revalidatePath('/admin/clientes');
         return { success: true, id };
     } catch (error: any) {
@@ -194,6 +233,7 @@ export async function updateCustomerAction(customerData: CustomerInfo, user: Use
             .eq('id', customerData.id);
         if (error) throw error;
 
+        invalidateCustomersApiCache();
         revalidatePath('/admin/clientes');
         return { success: true };
     } catch (error: any) {
@@ -211,10 +251,29 @@ export async function deleteCustomerAction(id: string, user: User | null) {
             .eq('id', id);
         if (error) throw error;
 
+        invalidateCustomersApiCache();
         revalidatePath('/admin/clientes');
         return { success: true };
     } catch (error: any) {
         return { success: false, error: error?.message || 'Falha ao bloquear cliente' };
+    }
+}
+
+export async function permanentlyDeleteCustomerAction(id: string, user: User | null) {
+    try {
+        if (user?.role !== 'admin') {
+            return { success: false, error: 'Sem permissão para excluir permanentemente.' };
+        }
+
+        const supabase = getSupabaseAdmin();
+        const { error } = await supabase.from('customers').delete().eq('id', id);
+        if (error) throw error;
+
+        invalidateCustomersApiCache();
+        revalidatePath('/admin/clientes');
+        return { success: true };
+    } catch (error: any) {
+        return { success: false, error: error?.message || 'Falha ao excluir cliente permanentemente' };
     }
 }
 
@@ -239,6 +298,7 @@ export async function generateCustomerCodesAction(user: User | null) {
             updatedCount++;
         }
 
+        invalidateCustomersApiCache();
         revalidatePath('/admin/clientes');
         return { success: true, count: updatedCount };
     } catch (error: any) {
