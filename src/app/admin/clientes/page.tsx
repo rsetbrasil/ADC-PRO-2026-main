@@ -51,6 +51,17 @@ const getCustomerKey = (customer: CustomerInfo | null) => {
     return customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
 }
 
+const getCustomerListKey = (customer: CustomerInfo | null) => {
+    if (!customer) return '';
+    return customer.id || getCustomerKey(customer);
+}
+
+const isSameCustomer = (a: CustomerInfo | null, b: CustomerInfo | null) => {
+    if (!a || !b) return false;
+    if (a.id && b.id) return a.id === b.id;
+    return getCustomerKey(a) === getCustomerKey(b);
+}
+
 
 const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -97,7 +108,7 @@ const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<s
 
 function CustomersAdminPageInner() {
     const { products } = useData();
-    const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addCustomer, deleteCustomer, permanentlyDeleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, updateOrderStatus, generateCustomerCodes, deleteOrder, searchCustomers } = useAdmin();
+    const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addCustomer, deleteCustomer, permanentlyDeleteCustomer, restoreCustomerFromTrash, permanentlyDeleteCustomerFromTrash, updateOrderStatus, generateCustomerCodes, deleteOrder, searchCustomers, loadAllCustomers } = useAdmin();
     const { customers, customerOrders, customerFinancials, deletedCustomers } = useAdminData();
     const { user, users } = useAuth();
     const { settings } = useSettings();
@@ -122,6 +133,7 @@ function CustomersAdminPageInner() {
     const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState('active');
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const customerRowRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map());
     const lastAutofilledZipRef = useRef<string | null>(null);
     const [isGeneratingCustomerCodes, setIsGeneratingCustomerCodes] = useState(false);
     const [isOrderEditDialogOpen, setIsOrderEditDialogOpen] = useState(false);
@@ -141,6 +153,10 @@ function CustomersAdminPageInner() {
         }
     }, [newCustomerSellerId, user?.id]);
 
+    useEffect(() => {
+        loadAllCustomers();
+    }, [loadAllCustomers]);
+
     // Effect to handle selecting a customer from URL query parameter
     useEffect(() => {
         const cpfFromQuery = searchParams.get('cpf');
@@ -153,6 +169,16 @@ function CustomersAdminPageInner() {
             }
         }
     }, [searchParams, customers, router]);
+
+    useEffect(() => {
+        const key = getCustomerListKey(selectedCustomer);
+        if (!key) return;
+        const timer = setTimeout(() => {
+            const el = customerRowRefs.current.get(key);
+            el?.scrollIntoView({ block: 'center' });
+        }, 0);
+        return () => clearTimeout(timer);
+    }, [selectedCustomer, activeTab, customers.length]);
 
     // Debounced search effect
     useEffect(() => {
@@ -550,6 +576,7 @@ function CustomersAdminPageInner() {
             const createdCustomer: CustomerInfo = {
                 ...customerData,
                 id: res?.id || customerData.id,
+                cpf: customerData.cpf ? customerData.cpf.replace(/\D/g, '') : customerData.cpf,
                 sellerId: customerSellerId,
                 sellerName: customerSellerName,
             };
@@ -787,8 +814,9 @@ Não esqueça de enviar o comprovante!`;
                                     <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-2">
                                         {filteredCustomers.map((customer) => (
                                             <Button
-                                                key={getCustomerKey(customer)}
-                                                variant={getCustomerKey(selectedCustomer) === getCustomerKey(customer) ? 'secondary' : 'ghost'}
+                                                key={getCustomerListKey(customer)}
+                                                ref={(el) => { customerRowRefs.current.set(getCustomerListKey(customer), el); }}
+                                                variant={isSameCustomer(selectedCustomer, customer) ? 'secondary' : 'ghost'}
                                                 className="justify-start w-full text-left h-auto py-2"
                                                 onClick={() => setSelectedCustomer(customer)}
                                             >
@@ -829,8 +857,9 @@ Não esqueça de enviar o comprovante!`;
                                     <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-2">
                                         {filteredCustomers.map((customer) => (
                                             <Button
-                                                key={getCustomerKey(customer)}
-                                                variant={getCustomerKey(selectedCustomer) === getCustomerKey(customer) ? 'secondary' : 'ghost'}
+                                                key={getCustomerListKey(customer)}
+                                                ref={(el) => { customerRowRefs.current.set(getCustomerListKey(customer), el); }}
+                                                variant={isSameCustomer(selectedCustomer, customer) ? 'secondary' : 'ghost'}
                                                 className="justify-start w-full text-left h-auto py-2"
                                                 onClick={() => setSelectedCustomer(customer)}
                                             >

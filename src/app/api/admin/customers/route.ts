@@ -20,7 +20,8 @@ export async function GET(request: Request) {
   try {
     const now = Date.now();
     const url = new URL(request.url);
-    const bypassCache = url.searchParams.has('bust');
+    const mode = url.searchParams.get('mode');
+    const bypassCache = url.searchParams.has('bust') || mode === 'all';
     if (!bypassCache) {
       const cached = getCache();
       if (cached && now - cached.at < CACHE_TTL_MS) {
@@ -32,7 +33,60 @@ export async function GET(request: Request) {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const res = await supabase.from('customers').select('*').order('name', { ascending: true }).limit(2000);
+    if (mode === 'all') {
+      const limitRaw = Number(url.searchParams.get('limit') || '1000');
+      const offsetRaw = Number(url.searchParams.get('offset') || '0');
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 1000;
+      const offset = Number.isFinite(offsetRaw) ? Math.max(0, Math.floor(offsetRaw)) : 0;
+
+      let res = await supabase
+        .from('customers')
+        .select('*')
+        .order('id', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (res.error) {
+        const msg = String(res.error.message || '').toLowerCase();
+        if (msg.includes('statement timeout')) {
+          res = await supabase
+            .from('customers')
+            .select('*')
+            .order('id', { ascending: false })
+            .range(offset, offset + limit - 1);
+        }
+      }
+
+      if (res.error) throw res.error;
+
+      const mapped: CustomerInfo[] = (res.data || []).map((c: any) => ({
+        id: c.id,
+        code: c.code || undefined,
+        name: c.name,
+        cpf: c.cpf || undefined,
+        phone: c.phone || '',
+        phone2: c.phone2 || undefined,
+        phone3: c.phone3 || undefined,
+        email: c.email || undefined,
+        zip: c.zip || '',
+        address: c.address || '',
+        number: c.number || '',
+        complement: c.complement || undefined,
+        neighborhood: c.neighborhood || '',
+        city: c.city || '',
+        state: c.state || '',
+        password: c.password || undefined,
+        observations: c.observations || undefined,
+        sellerId: c.seller_id ?? c.sellerId ?? undefined,
+        sellerName: c.seller_name ?? c.sellerName ?? undefined,
+        blocked: !!c.blocked,
+        blockedReason: c.blocked_reason ?? c.blockedReason ?? undefined,
+        rating: c.rating ?? undefined,
+      }));
+
+      return NextResponse.json({ success: true, data: mapped, offset, limit });
+    }
+
+    const res = await supabase.from('customers').select('*').order('id', { ascending: false }).limit(2000);
     if (res.error) {
       const msg = String(res.error.message || '').toLowerCase();
       if (msg.includes('statement timeout')) {
@@ -63,7 +117,7 @@ export async function GET(request: Request) {
           rating: c.rating ?? undefined,
         }));
         let merged = mappedBase;
-        const blockedRes = await supabase.from('customers').select('*').eq('blocked', true).order('name', { ascending: true }).limit(5000);
+        const blockedRes = await supabase.from('customers').select('*').eq('blocked', true).order('id', { ascending: false }).limit(5000);
         if (!blockedRes.error && blockedRes.data) {
           const mappedBlocked: CustomerInfo[] = (blockedRes.data || []).map((c: any) => ({
             id: c.id,
@@ -128,7 +182,7 @@ export async function GET(request: Request) {
     }));
 
     let merged = mappedBase;
-    const blockedRes = await supabase.from('customers').select('*').eq('blocked', true).order('name', { ascending: true }).limit(5000);
+    const blockedRes = await supabase.from('customers').select('*').eq('blocked', true).order('id', { ascending: false }).limit(5000);
     if (!blockedRes.error && blockedRes.data) {
       const mappedBlocked: CustomerInfo[] = (blockedRes.data || []).map((c: any) => ({
         id: c.id,

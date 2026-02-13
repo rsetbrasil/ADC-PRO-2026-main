@@ -78,6 +78,7 @@ interface AdminContextType {
   isSearching: boolean;
   searchOrders: (query: string) => Promise<void>;
   searchCustomers: (query: string) => Promise<void>;
+  loadAllCustomers: () => Promise<void>;
   orders: Order[];
   commissionPayments: CommissionPayment[];
   stockAudits: StockAudit[];
@@ -125,6 +126,8 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const { user, users } = useAuth();
   const isFetching = useRef(false);
   const hasPaginatedOrdersRef = useRef(false);
+  const isLoadingAllCustomersRef = useRef(false);
+  const hasLoadedAllCustomersRef = useRef(false);
 
   // Use local state for orders, etc.
   const [orders, setOrders] = useState<Order[]>([]);
@@ -278,6 +281,34 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       setIsSearching(false);
     }
   }, [user, fetchData]);
+
+  const loadAllCustomers = useCallback(async () => {
+    if (!user) return;
+    if (hasLoadedAllCustomersRef.current) return;
+    if (isLoadingAllCustomersRef.current) return;
+
+    isLoadingAllCustomersRef.current = true;
+    try {
+      const pageSize = 1000;
+      let offset = 0;
+      for (;;) {
+        const res = await fetch(`/api/admin/customers?mode=all&offset=${offset}&limit=${pageSize}`, { cache: 'no-store' }).then((r) => r.json());
+        if (!res?.success || !Array.isArray(res.data)) break;
+
+        const chunk = res.data as CustomerInfo[];
+        if (chunk.length === 0) break;
+
+        setCustomers((prev) => mergeCustomersById(prev, chunk));
+
+        if (chunk.length < pageSize) break;
+        offset += pageSize;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      hasLoadedAllCustomersRef.current = true;
+    } finally {
+      isLoadingAllCustomersRef.current = false;
+    }
+  }, [user]);
 
   useEffect(() => {
     const tick = async () => {
@@ -882,6 +913,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       isSearching,
       searchOrders,
       searchCustomers,
+      loadAllCustomers,
       orders,
       commissionPayments, stockAudits, avarias, chatSessions, customers: customersForUI, deletedCustomers, customerOrders, customerFinancials, financialSummary, commissionSummary,
   };
